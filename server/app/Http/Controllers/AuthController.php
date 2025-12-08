@@ -26,7 +26,7 @@ class AuthController extends Controller
             'email' => 'required|email|unique:students,email',
             'password' => 'required|string|min:6|confirmed',
             'phone' => 'nullable|string|max:15',
-            'department_id' => 'nullable|string|max:50',
+            // 'department_id' => 'nullable|string|max:50',
             'course_id' => 'nullable|string|max:100',
             'year_of_study' => 'nullable|integer',
         ]);

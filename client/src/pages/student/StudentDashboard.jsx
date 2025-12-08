@@ -50,7 +50,7 @@ import {
 
 function Register({ darkMode, onClose, onSuccess }) {
   const [formData, setFormData] = useState({
-    deviceType: '',
+    // deviceType: 'Laptop',
     brand: '',
     model: '',
     serialNumber: '',
@@ -105,7 +105,7 @@ function Register({ darkMode, onClose, onSuccess }) {
       
       // Reset form
       setFormData({
-        deviceType: '',
+        // deviceType: '',
         brand: '',
         model: '',
         serialNumber: '',
@@ -202,11 +202,7 @@ function Register({ darkMode, onClose, onSuccess }) {
                   required
                   className={`w-full px-4 py-2.5 rounded-lg border ${inputBg} ${textPrimary} font-medium transition-all focus:outline-none focus:ring-2 focus:ring-blue-500`}
                 >
-                  <option value="">Select device type</option>
                   <option value="Laptop">Laptop</option>
-                  <option value="Desktop">Desktop</option>
-                  <option value="Tablet">Tablet</option>
-                  <option value="Mobile">Mobile</option>
                 </select>
               </div>
 
@@ -254,19 +250,6 @@ function Register({ darkMode, onClose, onSuccess }) {
                 />
               </div>
 
-              <div>
-                <label className={`block text-sm font-semibold ${textPrimary} mb-2`}>
-                  Model Number
-                </label>
-                <input
-                  type="text"
-                  name="modelNumber"
-                  value={formData.modelNumber}
-                  onChange={handleChange}
-                  placeholder="e.g., XYZ-1234-ABCD"
-                  className={`w-full px-4 py-2.5 rounded-lg border ${inputBg} ${textPrimary} placeholder-gray-500 font-medium transition-all focus:outline-none focus:ring-2 focus:ring-blue-500`}
-                />
-              </div>
             </div>
 
             {/* Advanced Information Toggle */}
@@ -459,6 +442,7 @@ function Register({ darkMode, onClose, onSuccess }) {
               Cancel
             </button>
             <button
+              onClick={handleSubmit}
               type="submit"
               disabled={loading}
               className="flex-1 px-4 py-2.5 rounded-lg font-semibold bg-gradient-to-r from-blue-600 to-indigo-600 text-white hover:from-blue-700 hover:to-indigo-700 transition-all shadow-lg disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
