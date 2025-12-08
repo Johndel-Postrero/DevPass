@@ -13,15 +13,23 @@ class Student extends Authenticatable
     use HasFactory, Notifiable, HasApiTokens;
 
     protected $table = 'students';
-    protected $primaryKey = 'pkStudentID';
+    
+    // Specify the custom primary key (since it's not the default 'id')
+    protected $primaryKey = 'id';
+    
+    // Indicate the primary key is a string
+    protected $keyType = 'string';
+    
+    // Set incrementing to false because strings are not auto-incrementing
+    public $incrementing = false;
 
     protected $fillable = [
         'id',
         'name',
         'email',
         'phone',
-        'department',
-        'course',
+        'department_id',
+        'course_id',
         'year_of_study',
         'password', // Add password field
     ];
@@ -45,5 +53,15 @@ class Student extends Authenticatable
                 $this->attributes['password'] = Hash::make($value);
             }
         }
+    }
+
+    // public function department()
+    // {
+    //     return $this->belongsTo(Department::class, 'department_id');
+    // }
+
+    public function course()
+    {
+        return $this->belongsTo(Course::class, 'course_id');
     }
 }

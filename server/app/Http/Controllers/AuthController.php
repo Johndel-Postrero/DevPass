@@ -21,13 +21,13 @@ class AuthController extends Controller
     public function register(Request $request)
     {
         $validated = $request->validate([
-            'id' => 'required|string|min:6|max:8|unique:students,id',
+            'id' => 'required|string|min:8|max:8|unique:students,id',
             'name' => 'required|string|max:100',
             'email' => 'required|email|unique:students,email',
             'password' => 'required|string|min:6|confirmed',
             'phone' => 'nullable|string|max:15',
-            'department' => 'nullable|string|max:50',
-            'course' => 'nullable|string|max:100',
+            // 'department_id' => 'nullable|string|max:50',
+            'course_id' => 'nullable|string|max:100',
             'year_of_study' => 'nullable|integer',
         ]);
 

@@ -14,14 +14,111 @@ export default function Landing() {
   const [activeSection, setActiveSection] = useState('home');
   const [registerStep, setRegisterStep] = useState(1);
   const navigate = useNavigate();
+  const staticCourseData = [
+      {
+        courseId: 1,
+        courseCode: "BSCE",
+        courseName: "Bachelor of Science in Civil Engineering",
+      },
+      {
+        courseId: 2,
+        courseCode: "BSCpE",
+        courseName: "Bachelor of Science in Computer Engineering",
+      },
+      {
+        courseId: 3,
+        courseCode: "BSEE",
+        courseName: "Bachelor of Science in Electrical Engineering",
+      },
+      {
+        courseId: 4,
+        courseCode: "BSECE",
+        courseName: "Bachelor of Science in Electronics Engineering",
+      },
+      {
+        courseId: 5,
+        courseCode: "BSME",
+        courseName: "Bachelor of Science in Mechanical Engineering",
+      },
+      {
+        courseId: 6,
+        courseCode: "BSCS",
+        courseName: "Bachelor of Science in Computer Science",
+      },
+      {
+        courseId: 7,
+        courseCode: "BSIT",
+        courseName: "Bachelor of Science in Information Technology",
+      },
+      {
+        courseId: 8,
+        courseCode: "BSIS",
+        courseName: "Bachelor of Science in Information Systems",
+      },
+      {
+        courseId: 9,
+        courseCode: "BSA",
+        courseName: "Bachelor of Science in Accountancy",
+      },
+      {
+        courseId: 10,
+        courseCode: "BSMA",
+        courseName: "Bachelor of Science in Management Accounting",
+      },
+      {
+        courseId: 11,
+        courseCode: "BSBA-MM",
+        courseName: "BSBA Major in Marketing Management",
+      },
+      {
+        courseId: 12,
+        courseCode: "BSBA-HRM",
+        courseName: "BSBA Major in Human Resource Management",
+      },
+      {
+        courseId: 13,
+        courseCode: "BSEd",
+        courseName: "Bachelor of Secondary Education",
+      },
+      {
+        courseId: 14,
+        courseCode: "BSN",
+        courseName: "Bachelor of Science in Nursing",
+      },
+      {
+        courseId: 15,
+        courseCode: "BSCrim",
+        courseName: "Bachelor of Science in Criminology",
+      },
+      {
+        courseId: 16,
+        courseCode: "BSMT",
+        courseName: "Bachelor of Science in Marine Transportation",
+      },
+      {
+        courseId: 17,
+        courseCode: "BSMarE",
+        courseName: "Bachelor of Science in Marine Engineering",
+      },
+      {
+        courseId: 18,
+        courseCode: "BS-Psych",
+        courseName: "Bachelor of Science in Psychology",
+      },
+      {
+        courseId: 19,
+        courseCode: "BSPharm",
+        courseName: "Bachelor of Science in Pharmacy",
+      },
+  ];
+  // --- End Course Data ---
 
   const [formData, setFormData] = useState({
     id: '',
     name: '',
     email: '',
-    course: '',
+    course_id: '',
     phone: '',
-    department: '',
     year_of_study: '',
     password: '',
     password_confirmation: '',
@@ -108,9 +205,8 @@ export default function Landing() {
           id: formData.id,
           name: formData.name,
           email: formData.email,
-          course: formData.course,
+          course_id: formData.course_id,
           phone: formData.phone,
-          department: formData.department,
           year_of_study: formData.year_of_study ? parseInt(formData.year_of_study) : null,
           password: formData.password,
           password_confirmation: formData.password_confirmation,
@@ -123,9 +219,8 @@ export default function Landing() {
             id: '',
             name: '',
             email: '',
-            course: '',
+            course_id: '',
             phone: '',
-            department: '',
             year_of_study: '',
             password: '',
             password_confirmation: '',
@@ -165,7 +260,7 @@ export default function Landing() {
       setRegisterStep(2);
       setError('');
     } else if (registerStep === 2) {
-      if (!formData.course || !formData.department) {
+      if (!formData.course_id) {
         setError('❌ Please fill in all required fields');
         return;
       }
@@ -254,84 +349,92 @@ export default function Landing() {
         );
 
       case 2:
-        return (
-          <div className="space-y-5 animate-fadeIn">
-            <div>
-              <label className={`block text-sm font-semibold ${formText} mb-3`}>
-                Course <span className="text-red-500">*</span>
-              </label>
-              <div className="relative">
-                <GraduationCap className={`absolute left-4 top-3.5 w-5 h-5 ${darkMode ? 'text-gray-600' : 'text-gray-500'}`} />
-                <input
-                  name="course"
-                  type="text"
-                  className={`w-full pl-12 pr-4 py-3 ${inputBg} rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all`}
-                  placeholder="Computer Science"
-                  value={formData.course}
-                  onChange={handleChange}
-                  required
-                />
-              </div>
-            </div>
-
-            <div>
-              <label className={`block text-sm font-semibold ${formText} mb-3`}>
-                Department <span className="text-red-500">*</span>
-              </label>
-              <div className="relative">
-                <GraduationCap className={`absolute left-4 top-3.5 w-5 h-5 ${darkMode ? 'text-gray-600' : 'text-gray-500'}`} />
-                <input
-                  name="department"
-                  type="text"
-                  className={`w-full pl-12 pr-4 py-3 ${inputBg} rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all`}
-                  placeholder="Engineering"
-                  value={formData.department}
-                  onChange={handleChange}
-                  required
-                />
-              </div>
-            </div>
-
-            <div>
-              <label className={`block text-sm font-semibold ${formText} mb-3`}>
-                Year of Study
-              </label>
-              <div className="relative">
-                <Calendar className={`absolute left-4 top-3.5 w-5 h-5 ${darkMode ? 'text-gray-600' : 'text-gray-500'}`} />
-                <input
-                  name="year_of_study"
-                  type="number"
-                  min="1"
-                  max="10"
-                  className={`w-full pl-12 pr-4 py-3 ${inputBg} rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all`}
-                  placeholder="3"
-                  value={formData.year_of_study}
-                  onChange={handleChange}
-                />
-              </div>
-            </div>
-
-            <div className="flex justify-between">
-              <button
-                type="button"
-                onClick={prevStep}
-                className="flex items-center gap-2 px-6 py-3 bg-gray-500 text-white rounded-xl font-semibold hover:bg-gray-600 transition-all cursor-pointer"
+  return (
+    <motion.div
+      key="register-step-2"
+      initial={{ opacity: 0, x: 20 }}
+      animate={{ opacity: 1, x: 0 }}
+      exit={{ opacity: 0, x: -20 }}
+      transition={{ duration: 0.3 }}
+      className="space-y-5"
+    >
+      {/* Course Selection */}
+      <div>
+        <label className={`block text-sm font-semibold ${formText} mb-3`}>
+          Course <span className="text-red-500">*</span>
+        </label>
+        <div className="relative">
+          <GraduationCap className={`absolute left-4 top-3.5 w-5 h-5 z-10 ${darkMode ? 'text-gray-400' : 'text-gray-500'}`} />
+          <select
+            name="course_id"
+            className={`w-full pl-12 pr-10 py-3 ${inputBg} rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all appearance-none cursor-pointer`}
+            value={formData.course_id}
+            onChange={handleChange}
+            required
+          >
+            <option value="" disabled className={darkMode ? 'bg-gray-900 text-gray-300' : 'bg-white text-gray-900'}>
+              Select your course
+            </option>
+            {staticCourseData.map((course) => (
+              <option 
+                key={course.courseId} 
+                value={course.courseId}
+                className={darkMode ? 'bg-gray-800 text-gray-300' : 'bg-white text-gray-900'}
               >
-                <ChevronLeft className="w-5 h-5" />
-                Previous
-              </button>
-              <button
-                type="button"
-                onClick={nextStep}
-                className="flex items-center cursor-pointer gap-2 px-6 py-3 bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-xl font-semibold hover:from-blue-700 hover:to-indigo-700 transition-all shadow-lg"
-              >
-                Next Step
-                <ChevronRight className="w-5 h-5" />
-              </button>
-            </div>
-          </div>
-        );
+                {course.courseCode} - {course.courseName}
+              </option>
+            ))}
+          </select>
+          <ChevronRight className={`absolute right-4 top-3.5 w-5 h-5 transform rotate-90 ${darkMode ? 'text-gray-400' : 'text-gray-500'}`} />
+        </div>
+        <p className={`mt-2 text-xs ${formDescText}`}>
+          Select your enrolled course from the list
+        </p>
+      </div>
 
+      {/* Year of Study - Now full width on mobile */}
+      <div>
+        <label className={`block text-sm font-semibold ${formText} mb-3`}>
+          Year of Study
+        </label>
+        <div className="relative">
+          <Calendar className={`absolute left-4 top-3.5 w-5 h-5 ${darkMode ? 'text-gray-400' : 'text-gray-500'}`} />
+          <input
+            name="year_of_study"
+            type="number"
+            min="1"
+            max="10"
+            className={`w-full pl-12 pr-4 py-3 ${inputBg} rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all`}
+            placeholder="Enter year (e.g., 3)"
+            value={formData.year_of_study}
+            onChange={handleChange}
+          />
+        </div>
+        <p className={`mt-2 text-xs ${formDescText}`}>
+          Optional - Enter your current year of study
+        </p>
+      </div>
+
+      <div className="flex justify-between pt-4">
+        <button
+          type="button"
+          onClick={prevStep}
+          className="flex items-center gap-2 px-5 py-2.5 sm:px-6 sm:py-3 bg-gray-500 text-white rounded-xl font-semibold hover:bg-gray-600 transition-all cursor-pointer"
+        >
+          <ChevronLeft className="w-4 h-4 sm:w-5 sm:h-5" />
+          <span className="hidden sm:inline">Previous</span>
+        </button>
+        <button
+          type="button"
+          onClick={nextStep}
+          className="flex items-center gap-2 px-5 py-2.5 sm:px-6 sm:py-3 bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-xl font-semibold hover:from-blue-700 hover:to-indigo-700 transition-all cursor-pointer shadow-lg"
+        >
+          <span className="hidden sm:inline">Next Step</span>
+          <ChevronRight className="w-4 h-4 sm:w-5 sm:h-5" />
+        </button>
+      </div>
+    </motion.div>
+  );
       case 3:
         return (
           <div className="space-y-5 animate-fadeIn">
@@ -576,7 +679,6 @@ const renderHome = () => (
           initial={{ opacity: 0, scale: 0.9 }}
           animate={{ opacity: 1, scale: 1 }}
           transition={{ duration: 0.5, delay: 0.3 }}
-          // whileHover={{ scale: 1.01 }}
           className={`${formBg} rounded-3xl p-8 lg:p-10 shadow-2xl hover:shadow-3xl transition-all duration-500`}
         >
           <motion.div

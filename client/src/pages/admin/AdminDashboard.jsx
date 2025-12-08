@@ -80,13 +80,13 @@ function DeviceDetailsModal({ device, darkMode, onClose, onApprove, onReject }) 
                 <p className={`text-sm ${textSecondary}`}>Student ID</p>
                 <p className={`font-semibold ${textPrimary}`}>{device.studentId}</p>
               </div>
-              <div>
+             <div>
                 <p className={`text-sm ${textSecondary}`}>Department</p>
-                <p className={`font-semibold ${textPrimary}`}>{device.department}</p>
+                <p className={`font-semibold ${textPrimary}`}>{device.department?.dept_name || device.department}</p>
               </div>
               <div>
                 <p className={`text-sm ${textSecondary}`}>Course</p>
-                <p className={`font-semibold ${textPrimary}`}>{device.course}</p>
+                <p className={`font-semibold ${textPrimary}`}>{device.course?.course_name || device.course}</p>
               </div>
             </div>
           </div>
@@ -764,9 +764,9 @@ export default function AdminDashboard() {
                           {device.studentName} • {device.studentId}
                         </p>
                         <div className="flex flex-wrap gap-2 text-xs sm:text-sm">
-                          <span className={`${textMuted}`}>{device.department}</span>
+                          <span className={`${textMuted}`}>{device.department?.dept_name || device.department}</span>
                           <span className={`${textMuted}`}>•</span>
-                          <span className={`${textMuted}`}>{device.course}</span>
+                          <span className={`${textMuted}`}>{device.course?.course_name || device.course}</span>
                           <span className={`${textMuted}`}>•</span>
                           <span className={`${textMuted}`}>Registered: {device.registrationDate}</span>
                         </div>

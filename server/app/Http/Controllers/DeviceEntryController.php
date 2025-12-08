@@ -65,7 +65,7 @@ class DeviceEntryController extends Controller
                 'id' => $entry->log_id,
                 'studentName' => $student->name ?? 'Unknown',
                 'studentId' => $student->id ?? 'N/A',
-                'studentDepartment' => $student->department ?? 'N/A',
+                // 'studentDepartment' => $student->department ?? 'N/A',
                 'studentCourse' => $student->course ?? 'N/A',
                 'device' => $device ? ($device->brand . ' ' . $device->model) : 'N/A',
                 'deviceType' => $device->device_type ?? 'N/A',
@@ -123,7 +123,7 @@ class DeviceEntryController extends Controller
             'student_data' => $student ? [
                 'student_name' => $student->name,
                 'student_id' => $student->id,
-                'student_department' => $student->department,
+                // 'student_department' => $student->department,
                 'student_course' => $student->course,
             ] : null,
             'device' => $device ? [
@@ -198,7 +198,7 @@ class DeviceEntryController extends Controller
             'student_data' => $student ? [
                 'student_name' => $student->name,
                 'student_id' => $student->id,
-                'student_department' => $student->department,
+                // 'student_department' => $student->department,
                 'student_course' => $student->course,
             ] : null,
             'device' => $device ? [
@@ -309,7 +309,7 @@ class DeviceEntryController extends Controller
                 'deviceSerial' => $device->serial_number ?? 'N/A',
                 'studentName' => $student->name ?? 'Unknown',
                 'studentId' => $student->id ?? 'N/A',
-                'studentDepartment' => $student->department ?? 'N/A',
+                // 'studentDepartment' => $student->department ?? 'N/A',
                 'studentCourse' => $student->course ?? 'N/A',
                 'status' => $entry->status,
                 'securityGuard' => $entry->securityGuard->name ?? 'Unknown',

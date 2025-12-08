@@ -1,0 +1,200 @@
+<?php
+
+namespace Database\Seeders;
+
+use Illuminate\Database\Seeder;
+use Illuminate\Support\Facades\DB;
+use Carbon\Carbon;
+
+class LaptopSpecificationSeeder extends Seeder
+{
+    /**
+     * Run the database seeds.
+     */
+    public function run(): void
+    {
+        $specifications = [
+            [
+                'laptop_id' => 1,
+                'processor' => 'Intel Core i5-1235U (12th Gen, 10-core)',
+                'motherboard' => 'Dell Inspiron 15 3000 Series Motherboard',
+                'memory' => '8GB DDR4 3200MHz',
+                'harddrive' => '256GB NVMe SSD',
+                'monitor' => '15.6" FHD (1920x1080) Anti-Glare LED',
+                'casing' => 'Platinum Silver Plastic Chassis',
+                'cd_dvd_rom' => 'None',
+                'operating_system' => 'Windows 11 Home 64-bit',
+            ],
+            [
+                'laptop_id' => 2,
+                'processor' => 'AMD Ryzen 7 5800H (8-core, 16-thread)',
+                'motherboard' => 'HP Pavilion Gaming 15 Motherboard',
+                'memory' => '16GB DDR4 3200MHz',
+                'harddrive' => '512GB NVMe SSD',
+                'monitor' => '15.6" FHD (1920x1080) IPS 144Hz',
+                'casing' => 'Shadow Black Aluminum Chassis',
+                'cd_dvd_rom' => 'None',
+                'operating_system' => 'Windows 11 Home 64-bit',
+            ],
+            [
+                'laptop_id' => 3,
+                'processor' => 'Apple M2 (8-core CPU, 10-core GPU)',
+                'motherboard' => 'Apple M2 SoC (System on Chip)',
+                'memory' => '8GB Unified Memory',
+                'harddrive' => '256GB SSD',
+                'monitor' => '13.6" Liquid Retina (2560x1664) 500 nits',
+                'casing' => 'Midnight Aluminum Unibody',
+                'cd_dvd_rom' => 'None',
+                'operating_system' => 'macOS Ventura',
+            ],
+            [
+                'laptop_id' => 4,
+                'processor' => 'Intel Core i7-12700H (14-core, 20-thread)',
+                'motherboard' => 'Lenovo Legion 5 Pro Motherboard',
+                'memory' => '16GB DDR5 4800MHz',
+                'harddrive' => '1TB NVMe SSD',
+                'monitor' => '16" WQXGA (2560x1600) IPS 165Hz',
+                'casing' => 'Storm Grey Aluminum-Plastic Hybrid',
+                'cd_dvd_rom' => 'None',
+                'operating_system' => 'Windows 11 Pro 64-bit',
+            ],
+            [
+                'laptop_id' => 5,
+                'processor' => 'Intel Core i9-13900HX (24-core, 32-thread)',
+                'motherboard' => 'ASUS ROG Strix G18 Motherboard',
+                'memory' => '32GB DDR5 4800MHz',
+                'harddrive' => '2TB NVMe Gen4 SSD',
+                'monitor' => '18" QHD+ (2560x1600) IPS 240Hz',
+                'casing' => 'Eclipse Gray Metal Chassis with RGB',
+                'cd_dvd_rom' => 'None',
+                'operating_system' => 'Windows 11 Pro 64-bit',
+            ],
+            [
+                'laptop_id' => 6,
+                'processor' => 'Intel Core i3-1115G4 (2-core, 4-thread)',
+                'motherboard' => 'Acer Aspire 3 Motherboard',
+                'memory' => '4GB DDR4 2666MHz',
+                'harddrive' => '128GB NVMe SSD',
+                'monitor' => '14" HD (1366x768) LED',
+                'casing' => 'Pure Silver Plastic Chassis',
+                'cd_dvd_rom' => 'None',
+                'operating_system' => 'Windows 11 Home S Mode',
+            ],
+            [
+                'laptop_id' => 7,
+                'processor' => 'AMD Ryzen 5 7530U (6-core, 12-thread)',
+                'motherboard' => 'Lenovo IdeaPad Slim 3 Motherboard',
+                'memory' => '8GB DDR4 3200MHz',
+                'harddrive' => '512GB NVMe SSD',
+                'monitor' => '15.6" FHD (1920x1080) IPS',
+                'casing' => 'Arctic Grey Plastic Chassis',
+                'cd_dvd_rom' => 'None',
+                'operating_system' => 'Windows 11 Home 64-bit',
+            ],
+            [
+                'laptop_id' => 8,
+                'processor' => 'Intel Core i7-1355U (10-core, 12-thread)',
+                'motherboard' => 'Dell XPS 13 Plus Motherboard',
+                'memory' => '16GB LPDDR5 6000MHz',
+                'harddrive' => '512GB NVMe Gen4 SSD',
+                'monitor' => '13.4" FHD+ (1920x1200) InfinityEdge',
+                'casing' => 'Platinum Silver CNC Aluminum Unibody',
+                'cd_dvd_rom' => 'None',
+                'operating_system' => 'Windows 11 Pro 64-bit',
+            ],
+            [
+                'laptop_id' => 9,
+                'processor' => 'Apple M2 Pro (12-core CPU, 19-core GPU)',
+                'motherboard' => 'Apple M2 Pro SoC',
+                'memory' => '16GB Unified Memory',
+                'harddrive' => '512GB SSD',
+                'monitor' => '14.2" Liquid Retina XDR (3024x1964)',
+                'casing' => 'Space Gray Aluminum Unibody',
+                'cd_dvd_rom' => 'None',
+                'operating_system' => 'macOS Ventura',
+            ],
+            [
+                'laptop_id' => 10,
+                'processor' => 'Intel Pentium Silver N6000 (4-core)',
+                'motherboard' => 'HP Stream 14 Motherboard',
+                'memory' => '4GB DDR4 2400MHz',
+                'harddrive' => '64GB eMMC',
+                'monitor' => '14" HD (1366x768) SVA',
+                'casing' => 'Snowflake White Plastic Chassis',
+                'cd_dvd_rom' => 'None',
+                'operating_system' => 'Windows 11 Home S Mode',
+            ],
+            [
+                'laptop_id' => 11,
+                'processor' => 'AMD Ryzen 9 7940HS (8-core, 16-thread)',
+                'motherboard' => 'ASUS Zephyrus G14 Motherboard',
+                'memory' => '16GB DDR5 4800MHz',
+                'harddrive' => '1TB NVMe Gen4 SSD',
+                'monitor' => '14" QHD+ (2560x1600) IPS 165Hz',
+                'casing' => 'Moonlight White Magnesium-Aluminum Alloy',
+                'cd_dvd_rom' => 'None',
+                'operating_system' => 'Windows 11 Pro 64-bit',
+            ],
+            [
+                'laptop_id' => 12,
+                'processor' => 'Intel Core i5-1335U (10-core, 12-thread)',
+                'motherboard' => 'Microsoft Surface Laptop 5 Motherboard',
+                'memory' => '8GB LPDDR5x 6400MHz',
+                'harddrive' => '256GB NVMe SSD',
+                'monitor' => '13.5" PixelSense (2256x1504) Touchscreen',
+                'casing' => 'Sage Aluminum with Alcantara Keyboard',
+                'cd_dvd_rom' => 'None',
+                'operating_system' => 'Windows 11 Home 64-bit',
+            ],
+            [
+                'laptop_id' => 13,
+                'processor' => 'Intel Celeron N4020 (2-core, 2-thread)',
+                'motherboard' => 'Lenovo Chromebook 3 Motherboard',
+                'memory' => '4GB LPDDR4 2400MHz',
+                'harddrive' => '64GB eMMC',
+                'monitor' => '11.6" HD (1366x768) TN',
+                'casing' => 'Abyss Blue Plastic Chassis',
+                'cd_dvd_rom' => 'None',
+                'operating_system' => 'Chrome OS',
+            ],
+            [
+                'laptop_id' => 14,
+                'processor' => 'AMD Ryzen 7 6800U (8-core, 16-thread)',
+                'motherboard' => 'Lenovo ThinkPad X13 Gen 3 Motherboard',
+                'memory' => '16GB LPDDR5 6400MHz',
+                'harddrive' => '512GB NVMe Gen4 SSD',
+                'monitor' => '13.3" WUXGA (1920x1200) IPS',
+                'casing' => 'Thunder Black Carbon Fiber Reinforced',
+                'cd_dvd_rom' => 'None',
+                'operating_system' => 'Windows 11 Pro 64-bit',
+            ],
+            [
+                'laptop_id' => 15,
+                'processor' => 'Intel Core i7-13700H (14-core, 20-thread)',
+                'motherboard' => 'MSI Katana GF66 Motherboard',
+                'memory' => '16GB DDR5 4800MHz',
+                'harddrive' => '1TB NVMe SSD',
+                'monitor' => '15.6" FHD (1920x1080) IPS 144Hz',
+                'casing' => 'Titanium Gray Brushed Aluminum',
+                'cd_dvd_rom' => 'None',
+                'operating_system' => 'Windows 11 Home 64-bit',
+            ],
+        ];
+
+        foreach ($specifications as $spec) {
+            DB::table('laptop_specifications')->insert([
+                'laptop_id' => $spec['laptop_id'],
+                'processor' => $spec['processor'],
+                'motherboard' => $spec['motherboard'],
+                'memory' => $spec['memory'],
+                'harddrive' => $spec['harddrive'],
+                'monitor' => $spec['monitor'],
+                'casing' => $spec['casing'],
+                'cd_dvd_rom' => $spec['cd_dvd_rom'],
+                'operating_system' => $spec['operating_system'],
+                'created_at' => Carbon::now(),
+                'updated_at' => Carbon::now(),
+            ]);
+        }
+    }
+}

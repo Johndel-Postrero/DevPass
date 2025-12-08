@@ -99,24 +99,28 @@ function ScanResultModal({ result, darkMode, onClose, onAccept, onDeny, gate, pr
                         </div>
                       </div>
                     )}
-                    {studentData.student_department && (
-                      <div className="flex items-center gap-3">
-                        <User className={`w-5 h-5 ${textSecondary}`} />
-                        <div className="flex-1">
-                          <p className={`text-xs ${textSecondary}`}>Department</p>
-                          <p className={`font-semibold ${textPrimary}`}>{studentData.student_department}</p>
-                        </div>
+                   {studentData.student_department && (
+                    <div className="flex items-center gap-3">
+                      <User className={`w-5 h-5 ${textSecondary}`} />
+                      <div className="flex-1">
+                        <p className={`text-xs ${textSecondary}`}>Department</p>
+                        <p className={`font-semibold ${textPrimary}`}>
+                          {studentData.student_department?.dept_name || studentData.student_department}
+                        </p>
                       </div>
-                    )}
-                    {studentData.student_course && (
-                <div className="flex items-center gap-3">
-                  <User className={`w-5 h-5 ${textSecondary}`} />
-                  <div className="flex-1">
-                          <p className={`text-xs ${textSecondary}`}>Course</p>
-                          <p className={`font-semibold ${textPrimary}`}>{studentData.student_course}</p>
-                  </div>
-                </div>
-                    )}
+                    </div>
+                  )}
+                  {studentData.student_course && (
+                    <div className="flex items-center gap-3">
+                      <User className={`w-5 h-5 ${textSecondary}`} />
+                      <div className="flex-1">
+                        <p className={`text-xs ${textSecondary}`}>Course</p>
+                        <p className={`font-semibold ${textPrimary}`}>
+                          {studentData.student_course?.course_name || studentData.student_course}
+                        </p>
+                      </div>
+                    </div>
+                  )}
                     {deviceData.brand && deviceData.model && (
                 <div className="flex items-center gap-3">
                   <Laptop className={`w-5 h-5 ${textSecondary}`} />

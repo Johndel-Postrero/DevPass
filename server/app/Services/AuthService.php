@@ -19,8 +19,8 @@ class AuthService
             'name' => $data['name'],
             'email' => $data['email'],
             'phone' => $data['phone'] ?? null,
-            'department' => $data['department'] ?? null,
-            'course' => $data['course'] ?? null,
+            // 'department_id' => $data['department_id'] ?? null,
+            'course_id' => $data['course_id'] ?? null,
             'year_of_study' => $data['year_of_study'] ?? null,
             'password' => $data['password'], // Will be auto-hashed by model
         ]);
@@ -198,4 +198,6 @@ class AuthService
 
         return ['message' => 'Password reset successful'];
     }
+
+    
 }
