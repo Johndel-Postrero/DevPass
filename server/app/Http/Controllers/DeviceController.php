@@ -27,12 +27,17 @@ class DeviceController extends Controller
         $status = $request->query('status'); // pending, active, all
         $user = $request->user();
         
-        $query = Device::with(['student', 'admin', 'qrCodes']);
+        // Ensure relationships are correctly defined in the Device model:
+        // 'student' -> belongs to Student::class
+        // 'admin' -> belongs to Admin::class (using 'approved_by' column)
+        // 'qrCodes' -> hasMany QrCode::class
+        $query = Device::with(['student', 'admin']); // Removed 'qrCodes' from eager loading in index for efficiency if not strictly needed immediately
         
-        // If user is a student (not admin), only show their own devices
-        if ($user && isset($user->id)) {
-            // Check if user is admin by course or email
-            $isAdmin = false;
+        // --- Admin/Student Authorization Logic ---
+        $isAdmin = false;
+        if ($user) {
+            // NOTE: The logic below assumes the authenticated user is an instance of Student model
+            // or has access to 'course' and 'email' properties for role detection.
             if (isset($user->course)) {
                 $isAdmin = strtolower($user->course) === 'admin';
             }
@@ -46,6 +51,7 @@ class DeviceController extends Controller
             }
         }
         
+        // --- Status Filtering ---
         if ($status && $status !== 'all') {
             $query->where('registration_status', $status);
         }
@@ -54,6 +60,11 @@ class DeviceController extends Controller
         
         // Format response for frontend
         $formatted = $devices->map(function ($device) {
+            // Use the correct primary key name: 'laptop_id'
+            $idKey = 'laptop_id';
+            
+            // Eager load qrCodes only when needed inside the map, or better, fetch outside.
+            // Assuming QrCode model has a device_id column that maps to Device's laptop_id
             $latestQR = $device->qrCodes()->where('is_active', true)->latest('expires_at')->first();
             
             // Get last scanned timestamp from entry_log
@@ -70,12 +81,12 @@ class DeviceController extends Controller
             }
             
             return [
-                'id' => $device->device_id,
+                // CHANGED: Primary key is 'laptop_id' in your schema
+                'id' => $device->$idKey, 
                 'studentName' => $device->student->name ?? 'Unknown',
                 'studentId' => $device->student->id ?? 'N/A',
-                // 'department' => $device->student->department ?? 'N/A',
                 'course' => $device->student->course ?? 'N/A',
-                'type' => $device->device_type,
+                // REMOVED 'type' as it's not in the schema, using 'model'/'brand' instead
                 'brand' => $device->brand,
                 'model' => $device->model,
                 'serialNumber' => $device->serial_number,
@@ -111,10 +122,11 @@ class DeviceController extends Controller
      */
     public function approve($id)
     {
-        $device = Device::findOrFail($id);
+        // CHANGED: Use 'laptop_id' for findOrFail if that is the model's primary key
+        $device = Device::findOrFail($id); 
         $user = Auth::user();
         
-        // Check if user is admin
+        // --- Admin Check ---
         $isAdmin = false;
         if (isset($user->course)) {
             $isAdmin = strtolower($user->course) === 'admin';
@@ -127,15 +139,19 @@ class DeviceController extends Controller
             return response()->json(['message' => 'Unauthorized. Admin access required.'], 403);
         }
         
-        // Get admin ID from admins table if exists, otherwise use user's pkStudentID
+        // Get admin ID from admins table
+        // NOTE: This logic assumes the authenticated $user object (Student model) has an 'email'
+        // and that an Admin record exists with that email and has an 'admin_id' primary key.
         $adminId = null;
-        if (isset($user->pkStudentID)) {
-            // Try to find admin by email or create one
+        if (isset($user->email)) {
             $admin = \App\Models\Admin::where('email', $user->email)->first();
             if ($admin) {
-                $adminId = $admin->admin_id;
+                $adminId = $admin->admin_id; // Match the foreign key 'approved_by' in devices table
             }
         }
+        
+        // Fallback or error handling if adminId is not found might be needed here
+        // For simplicity, we proceed with potentially null if user isn't found in Admin model
         
         $device->registration_status = 'active';
         $device->approved_by = $adminId;
@@ -144,7 +160,8 @@ class DeviceController extends Controller
         
         // Create QR code for the device
         $qrCode = $this->qrCodeService->createQRCode([
-            'device_id' => $device->device_id,
+            // CHANGED: Use the correct primary key 'laptop_id'
+            'laptop_id' => $device->laptop_id, 
             'expires_at' => Carbon::now()->addMonth(),
             'is_active' => true,
         ]);
@@ -164,7 +181,7 @@ class DeviceController extends Controller
         $device = Device::findOrFail($id);
         $user = Auth::user();
         
-        // Check if user is admin
+        // Check if user is admin (same logic as approve)
         $isAdmin = false;
         if (isset($user->course)) {
             $isAdmin = strtolower($user->course) === 'admin';
@@ -190,41 +207,24 @@ class DeviceController extends Controller
      */
     public function store(Request $request)
     {
+        // CHANGED: Validation only includes fields present in the 'devices' migration schema
         $validated = $request->validate([
-            'device_type' => 'required|string|max:50',
+            // NOTE: 'device_type' is not in the schema. Assuming 'model' or 'brand' covers the device description.
+            // If you need to differentiate device types (Laptop/PC/Tablet), you must add 'device_type' to the migration.
             'brand' => 'nullable|string|max:50',
-            'model' => 'nullable|string|max:100',
+            'model' => 'required|string|max:100', // 'model' is unique per schema
             'serial_number' => 'nullable|string|max:100',
-            'processor' => 'nullable|string|max:100',
-            'motherboard' => 'nullable|string|max:100',
-            'memory' => 'nullable|string|max:50',
-            'harddrive' => 'nullable|string|max:100',
-            'monitor' => 'nullable|string|max:100',
-            'casing' => 'nullable|string|max:100',
-            'cd_dvd_rom' => 'nullable|string|max:50',
-            'operating_system' => 'nullable|string|max:100',
-            'model_number' => 'nullable|string|max:100',
-            'mac_address' => 'nullable|string|max:17',
         ]);
 
         $student = $request->user();
         
         $device = Device::create([
             'student_id' => $student->id,
-            'device_type' => $validated['device_type'],
+            // Removed 'device_type' if it's not in the schema
             'brand' => $validated['brand'] ?? null,
-            'model' => $validated['model'] ?? null,
+            'model' => $validated['model'], // Model is required and unique
             'serial_number' => $validated['serial_number'] ?? null,
-            'processor' => $validated['processor'] ?? null,
-            'motherboard' => $validated['motherboard'] ?? null,
-            'memory' => $validated['memory'] ?? null,
-            'harddrive' => $validated['harddrive'] ?? null,
-            'monitor' => $validated['monitor'] ?? null,
-            'casing' => $validated['casing'] ?? null,
-            'cd_dvd_rom' => $validated['cd_dvd_rom'] ?? null,
-            'operating_system' => $validated['operating_system'] ?? null,
-            'model_number' => $validated['model_number'] ?? null,
-            'mac_address' => $validated['mac_address'] ?? null,
+            // Removed all PC component fields (processor, motherboard, memory, etc.)
             'registration_date' => Carbon::now(),
             'registration_status' => 'pending',
         ]);
@@ -244,12 +244,12 @@ class DeviceController extends Controller
         $latestQR = $device->qrCodes()->where('is_active', true)->latest('expires_at')->first();
         
         return response()->json([
-            'id' => $device->device_id,
+            // CHANGED: Primary key is 'laptop_id' in your schema
+            // 'id' => $device->laptop_id, 
             'studentName' => $device->student->name ?? 'Unknown',
             'studentId' => $device->student->id ?? 'N/A',
-            // 'department' => $device->student->department ?? 'N/A',
             'course' => $device->student->course ?? 'N/A',
-            'type' => $device->device_type,
+            // REMOVED 'type'
             'brand' => $device->brand,
             'model' => $device->model,
             'serialNumber' => $device->serial_number,

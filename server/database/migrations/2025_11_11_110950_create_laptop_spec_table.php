@@ -13,7 +13,7 @@ return new class extends Migration
     {
         Schema::create('laptop_specifications', function (Blueprint $table) {
             $table->id('spec_id');
-            $table->unsignedBigInteger('laptop_id');
+            $table->string('model');
             $table->string('processor', 100);
             $table->string('motherboard', 100);
             $table->string('memory', 50);
@@ -24,8 +24,7 @@ return new class extends Migration
             $table->string('operating_system', 100);
             $table->timestamps();
 
-            // Foreign key constraint (optional - uncomment if you have a laptops table)
-            // $table->foreign('laptop_id')->references('id')->on('laptops')->onDelete('cascade');
+            $table->foreign('model')->references('model')->on('devices')->onDelete('cascade');
         });
     }
 
