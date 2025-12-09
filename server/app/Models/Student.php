@@ -28,7 +28,6 @@ class Student extends Authenticatable
         'name',
         'email',
         'phone',
-        'department_id',
         'course_id',
         'year_of_study',
         'password', // Add password field
@@ -62,6 +61,14 @@ class Student extends Authenticatable
 
     public function course()
     {
-        return $this->belongsTo(Course::class, 'course_id');
+        return $this->belongsTo(Course::class, 'course_id', 'course_id');
+    }
+
+    /**
+     * Get all devices for this student
+     */
+    public function devices()
+    {
+        return $this->hasMany(Device::class, 'student_id', 'id');
     }
 }

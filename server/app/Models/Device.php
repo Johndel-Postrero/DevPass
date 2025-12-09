@@ -4,6 +4,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne; // Added for activeQrCode
@@ -14,20 +15,25 @@ use App\Models\Student; // Added Student import for clarity
 
 class Device extends Model
 {
-    use HasFactory;
+    use HasFactory, SoftDeletes;
 
     protected $table = 'devices';
     protected $primaryKey = 'laptop_id'; // Matches your migration primary key
 
     protected $fillable = [
         'student_id',
+        'device_type',      // Added per data dictionary
         'model',
+        'model_number',     // Added per data dictionary
         'serial_number',
+        'mac_address',      // Added per data dictionary
         'brand',
         'registration_date',
         'registration_status',
         'approved_by',   // <-- UNCOMMENTED: Needed for approval
         'approved_at',   // <-- UNCOMMENTED: Needed for approval
+        'original_values', // Store original values before edit for rejection rollback
+        'last_action', // Track last action: 'approved', 'rejected', 'reverted'
     ];
 
     protected $casts = [
@@ -35,6 +41,8 @@ class Device extends Model
         'approved_at' => 'datetime',
         'created_at' => 'datetime',
         'updated_at' => 'datetime',
+        'deleted_at' => 'datetime',
+        'original_values' => 'array', // Cast JSON to array
     ];
 
     // --- RELATIONSHIPS ---

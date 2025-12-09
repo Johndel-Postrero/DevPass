@@ -21,7 +21,10 @@ class QRCodeService
     public function getQRCodeByHash($hash)
     {
         return QRCode::where('qr_code_hash', $hash)
-            ->with('device')
+            ->with(['device' => function($query) {
+                // Include soft-deleted devices so we can check their status
+                $query->withTrashed();
+            }])
             ->first();
     }
 
@@ -32,9 +35,9 @@ class QRCodeService
             $data['qr_code_hash'] = $this->generateQRHash();
         }
 
-        // Set generated_at if not provided
+        // Set generated_at if not provided (in application timezone)
         if (!isset($data['generated_at'])) {
-            $data['generated_at'] = Carbon::now();
+            $data['generated_at'] = Carbon::now(config('app.timezone'));
         }
 
         return QRCode::create($data);

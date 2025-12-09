@@ -13,13 +13,12 @@ use App\Http\Controllers\GateController;
 // Public routes (no authentication required)
 Route::post('/auth/register', [AuthController::class, 'register']);
 Route::post('/auth/login', [AuthController::class, 'login']);
-Route::post('/auth/forgot-password', [AuthController::class, 'forgotPassword']);
-Route::post('/auth/reset-password', [AuthController::class, 'resetPassword']);
 
 // Protected routes (authentication required)
 Route::middleware('auth:sanctum')->group(function () {
     Route::post('/auth/logout', [AuthController::class, 'logout']);
     Route::get('/auth/profile', [AuthController::class, 'profile']);
+    Route::put('/auth/profile', [AuthController::class, 'updateProfile']);
     
     // Your existing routes
     Route::apiResource('students', StudentController::class);
@@ -27,10 +26,14 @@ Route::middleware('auth:sanctum')->group(function () {
     // Device routes
     Route::get('/devices', [DeviceController::class, 'index']);
     Route::get('/devices/stats', [DeviceController::class, 'stats']);
+    Route::get('/devices/history', [DeviceController::class, 'history']); // Device approval/rejection history
     Route::post('/devices', [DeviceController::class, 'store']);
     Route::get('/devices/{id}', [DeviceController::class, 'show']);
+    Route::put('/devices/{id}', [DeviceController::class, 'update']);
+    Route::delete('/devices/{id}', [DeviceController::class, 'destroy']);
     Route::post('/devices/{id}/approve', [DeviceController::class, 'approve']);
     Route::post('/devices/{id}/reject', [DeviceController::class, 'reject']);
+    Route::post('/devices/{id}/renew-qr', [DeviceController::class, 'renewQR']);
     
     // Device entry routes (scans)
     Route::get('/entries', [DeviceEntryController::class, 'index']);

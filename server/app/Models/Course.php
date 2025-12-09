@@ -29,7 +29,6 @@ class Course extends Model
         'course_name',
         'course_code',
         'description',
-        'department_id',
     ];
 
     /**

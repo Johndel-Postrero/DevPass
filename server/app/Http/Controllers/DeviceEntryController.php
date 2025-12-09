@@ -6,6 +6,7 @@ use App\Models\EntryLog;
 use App\Models\QRCode;
 use App\Models\Gate;
 use App\Models\SecurityGuard;
+use App\Models\Device;
 use App\Services\EntryLogService;
 use App\Services\QRCodeService;
 use App\Services\GateService;
@@ -72,9 +73,9 @@ class DeviceEntryController extends Controller
                 'deviceSerial' => $device->serial_number ?? 'N/A',
                 'gate' => $entry->gate->gate_name ?? 'N/A',
                 'gateLocation' => $entry->gate->location ?? 'N/A',
-                'time' => $entry->scan_timestamp ? $entry->scan_timestamp->format('h:i A') : 'N/A',
-                'date' => $entry->scan_timestamp ? $entry->scan_timestamp->format('M d, Y') : 'N/A',
-                'fullTimestamp' => $entry->scan_timestamp ? $entry->scan_timestamp->format('M d, Y h:i A') : 'N/A',
+                'time' => $entry->scan_timestamp ? $entry->scan_timestamp->setTimezone(config('app.timezone'))->format('h:i A') : 'N/A',
+                'date' => $entry->scan_timestamp ? $entry->scan_timestamp->setTimezone(config('app.timezone'))->format('M d, Y') : 'N/A',
+                'fullTimestamp' => $entry->scan_timestamp ? $entry->scan_timestamp->setTimezone(config('app.timezone'))->format('M d, Y h:i A') : 'N/A',
                 'status' => $entry->status,
                 'securityGuard' => $entry->securityGuard->name ?? 'Unknown',
                 'securityGuardId' => $entry->securityGuard->guard_id ?? 'N/A',
@@ -89,49 +90,121 @@ class DeviceEntryController extends Controller
      */
     public function readQR(Request $request)
     {
-        $validated = $request->validate([
-            'qr_hash' => 'required|string',
-        ]);
+        try {
+            $validated = $request->validate([
+                'qr_hash' => 'required|string',
+            ]);
 
-        // Find QR code
-        $qrCode = $this->qrCodeService->getQRCodeByHash($validated['qr_hash']);
-        
-        if (!$qrCode) {
+            // Find QR code (including those with soft-deleted devices)
+            $qrCode = QRCode::where('qr_code_hash', $validated['qr_hash'])
+                ->with(['device' => function($query) {
+                    $query->withTrashed(); // Include soft-deleted devices
+                }])
+                ->first();
+            
+            if (!$qrCode) {
+                return response()->json([
+                    'valid' => false,
+                    'message' => 'QR code is not registered in the system. This QR code does not exist in our database.',
+                    'student_data' => null,
+                    'device' => null
+                ], 404);
+            }
+
+            // Check if QR code is expired - show error, no popup (check before device validation)
+            if ($qrCode->expires_at && $qrCode->expires_at->isPast()) {
+                return response()->json([
+                    'valid' => false,
+                    'message' => 'QR code has expired. Please renew the QR code.',
+                    'student_data' => null,
+                    'device' => null
+                ], 400);
+            }
+
+            // Check if QR code is inactive
+            if (!$qrCode->is_active) {
+                return response()->json([
+                    'valid' => false,
+                    'message' => 'QR code is inactive. This device may have been deactivated.',
+                    'student_data' => null,
+                    'device' => null
+                ], 400);
+            }
+
+            // Check if device exists
+            $device = $qrCode->device;
+            if (!$device) {
+                // Deactivate orphaned QR code
+                $qrCode->is_active = false;
+                $qrCode->save();
+                return response()->json([
+                    'valid' => false,
+                    'message' => 'Device not found. This QR code is not associated with any device.',
+                    'student_data' => null,
+                    'device' => null
+                ], 404);
+            }
+
+            // Check if device is soft-deleted - show error, no popup
+            if ($device->trashed() || $device->deleted_at !== null) {
+                // Deactivate QR code for deleted device
+                $qrCode->is_active = false;
+                $qrCode->save();
+                return response()->json([
+                    'valid' => false,
+                    'message' => 'This device has been deleted. The QR code is no longer valid.',
+                    'student_data' => null,
+                    'device' => null
+                ], 400);
+            }
+
+            // Note: Rejected devices are allowed - they can still be accepted/rejected by security
+            // Only deleted, not registered, and expired show errors without popup
+
+            // Check if student exists
+            $student = $device->student ?? null;
+            if (!$student) {
+                // Deactivate QR code for device without student
+                $qrCode->is_active = false;
+                $qrCode->save();
+                return response()->json([
+                    'valid' => false,
+                    'message' => 'Student not found. This device is not associated with any student.',
+                    'student_data' => null,
+                    'device' => null
+                ], 404);
+            }
+
+            return response()->json([
+                'valid' => true,
+                'message' => 'QR code is valid',
+                'student_data' => [
+                    'student_name' => $student->name,
+                    'student_id' => $student->id,
+                    'student_course' => $student->course,
+                ],
+                'device' => [
+                    'brand' => $device->brand,
+                    'model' => $device->model,
+                    'device_type' => $device->device_type,
+                ],
+            ]);
+        } catch (\Illuminate\Validation\ValidationException $e) {
             return response()->json([
                 'valid' => false,
-                'message' => 'QR code not found in system',
+                'message' => 'Invalid request. Please provide a valid QR code hash.',
                 'student_data' => null,
                 'device' => null
-            ], 404);
-        }
-
-        if (!$this->qrCodeService->isQRCodeValid($validated['qr_hash'])) {
+            ], 422);
+        } catch (\Exception $e) {
+            \Log::error('Error reading QR code: ' . $e->getMessage());
             return response()->json([
                 'valid' => false,
-                'message' => 'QR code is expired or inactive',
+                'message' => 'An error occurred while reading the QR code. Please try again.',
                 'student_data' => null,
                 'device' => null
-            ], 400);
+            ], 500);
         }
-
-        $device = $qrCode->device;
-        $student = $device->student ?? null;
-
-        return response()->json([
-            'valid' => true,
-            'message' => 'QR code is valid',
-            'student_data' => $student ? [
-                'student_name' => $student->name,
-                'student_id' => $student->id,
-                // 'student_department' => $student->department,
-                'student_course' => $student->course,
-            ] : null,
-            'device' => $device ? [
-                'brand' => $device->brand,
-                'model' => $device->model,
-                'device_type' => $device->device_type,
-            ] : null,
-        ]);
     }
 
     /**
@@ -139,19 +212,115 @@ class DeviceEntryController extends Controller
      */
     public function validateQR(Request $request)
     {
-        $validated = $request->validate([
-            'qr_hash' => 'required|string',
-            'gate_name' => 'required|string',
-        ]);
-
-        // Find QR code
-        $qrCode = $this->qrCodeService->getQRCodeByHash($validated['qr_hash']);
+        $qrCode = null;
+        $device = null;
+        $student = null;
         
-        if (!$qrCode || !$this->qrCodeService->isQRCodeValid($validated['qr_hash'])) {
+        try {
+            $validated = $request->validate([
+                'qr_hash' => 'required|string',
+                'gate_name' => 'required|string',
+            ]);
+
+            // Find QR code (including those with soft-deleted devices)
+            $qrCode = QRCode::where('qr_code_hash', $validated['qr_hash'])
+                ->with(['device' => function($query) {
+                    $query->withTrashed(); // Include soft-deleted devices
+                }])
+                ->first();
+            
+            // Check if QR code exists
+            if (!$qrCode) {
+                return response()->json([
+                    'status' => 'failed',
+                    'success' => false,
+                    'valid' => false,
+                    'message' => 'QR code is not registered in the system. This QR code does not exist in our database.',
+                ], 404);
+            }
+
+            // Check if QR code is expired - show error, no popup (check before device validation)
+            if ($qrCode->expires_at && $qrCode->expires_at->isPast()) {
+                return response()->json([
+                    'status' => 'failed',
+                    'success' => false,
+                    'valid' => false,
+                    'message' => 'QR code has expired. Please renew the QR code.',
+                ], 400);
+            }
+
+            // Check if QR code is inactive
+            if (!$qrCode->is_active) {
+                return response()->json([
+                    'status' => 'failed',
+                    'success' => false,
+                    'valid' => false,
+                    'message' => 'QR code is inactive. This device may have been deactivated.',
+                ], 400);
+            }
+
+            // Check if device exists
+            $device = $qrCode->device;
+            if (!$device) {
+                // Deactivate orphaned QR code
+                $qrCode->is_active = false;
+                $qrCode->save();
+                return response()->json([
+                    'status' => 'failed',
+                    'success' => false,
+                    'valid' => false,
+                    'message' => 'Device not found. This QR code is not associated with any device.',
+                ], 404);
+            }
+
+            // Check if device is soft-deleted - show error, no popup
+            if ($device->trashed() || $device->deleted_at !== null) {
+                // Deactivate QR code for deleted device
+                $qrCode->is_active = false;
+                $qrCode->save();
+                return response()->json([
+                    'status' => 'failed',
+                    'success' => false,
+                    'valid' => false,
+                    'message' => 'This device has been deleted. The QR code is no longer valid.',
+                ], 400);
+            }
+
+            // Note: Rejected devices are allowed - they can still be accepted/rejected by security
+            // Only deleted, not registered, and expired show errors without popup
+            // Active and rejected devices will show the accept/reject popup
+
+            // Get student for later use (device is already set above)
+            $student = $device->student ?? null;
+            
+            // Check if student exists
+            if (!$student) {
+                // Deactivate QR code for device without student
+                $qrCode->is_active = false;
+                $qrCode->save();
+                return response()->json([
+                    'status' => 'failed',
+                    'success' => false,
+                    'valid' => false,
+                    'message' => 'Student not found. This device is not associated with any student.',
+                ], 404);
+            }
+        } catch (\Illuminate\Validation\ValidationException $e) {
             return response()->json([
                 'status' => 'failed',
-                'message' => 'Invalid or expired QR code',
-            ], 400);
+                'success' => false,
+                'valid' => false,
+                'message' => 'Invalid request. Please provide valid QR code hash and gate name.',
+                'errors' => $e->errors()
+            ], 422);
+        } catch (\Exception $e) {
+            \Log::error('Error validating QR code: ' . $e->getMessage());
+            return response()->json([
+                'status' => 'failed',
+                'success' => false,
+                'valid' => false,
+                'message' => 'An error occurred while validating the QR code. Please try again.',
+            ], 500);
         }
 
         // Get or create gate
@@ -181,15 +350,23 @@ class DeviceEntryController extends Controller
         }
 
         // Create entry log with success status
-        $entryLog = $this->entryLogService->createEntryLog([
-            'qr_code_hash' => $validated['qr_hash'],
-            'gate_id' => $gate->gate_id,
-            'security_guard_id' => $securityGuardId,
-            'status' => 'success',
-        ]);
-
-        $device = $qrCode->device;
-        $student = $device->student ?? null;
+        try {
+            $entryLog = $this->entryLogService->createEntryLog([
+                'qr_code_hash' => $validated['qr_hash'],
+                'gate_id' => $gate->gate_id,
+                'security_guard_id' => $securityGuardId,
+                'status' => 'success',
+            ]);
+        } catch (\Exception $e) {
+            \Log::error('Error creating entry log: ' . $e->getMessage());
+            \Log::error('Entry log error trace: ' . $e->getTraceAsString());
+            return response()->json([
+                'status' => 'failed',
+                'success' => false,
+                'valid' => false,
+                'message' => 'Failed to log entry. Please try again.',
+            ], 500);
+        }
 
         return response()->json([
             'status' => 'success',
@@ -210,7 +387,7 @@ class DeviceEntryController extends Controller
                 'name' => $student->name ?? 'Unknown',
                 'studentId' => $student->id ?? 'N/A',
                 'device' => $device ? ($device->brand . ' ' . $device->model) : 'N/A',
-                'expiryDate' => $qrCode->expires_at ? $qrCode->expires_at->format('Y-m-d') : null,
+                'expiryDate' => $qrCode->expires_at ? $qrCode->expires_at->setTimezone(config('app.timezone'))->format('Y-m-d') : null,
             ],
         ]);
     }
@@ -220,19 +397,73 @@ class DeviceEntryController extends Controller
      */
     public function denyQR(Request $request)
     {
-        $validated = $request->validate([
-            'qr_hash' => 'required|string',
-            'gate_name' => 'required|string',
-        ]);
+        try {
+            $validated = $request->validate([
+                'qr_hash' => 'required|string',
+                'gate_name' => 'required|string',
+            ]);
 
-        // Find QR code
-        $qrCode = $this->qrCodeService->getQRCodeByHash($validated['qr_hash']);
-        
-        if (!$qrCode) {
+            // Find QR code (including those with soft-deleted devices)
+            $qrCode = QRCode::where('qr_code_hash', $validated['qr_hash'])
+                ->with(['device' => function($query) {
+                    $query->withTrashed(); // Include soft-deleted devices
+                }])
+                ->first();
+            
+            if (!$qrCode) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'QR code is not registered in the system. This QR code does not exist in our database.',
+                ], 404);
+            }
+
+            // Check if QR code is expired - show error, no popup
+            if ($qrCode->expires_at && $qrCode->expires_at->isPast()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'QR code has expired. Please renew the QR code.',
+                ], 400);
+            }
+
+            // Check if QR code is inactive
+            if (!$qrCode->is_active) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'QR code is inactive. This device may have been deactivated.',
+                ], 400);
+            }
+
+            // Check if device exists
+            $device = $qrCode->device;
+            if (!$device) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Device not found. This QR code is not associated with any device.',
+                ], 404);
+            }
+
+            // Check if device is soft-deleted - show error, no popup
+            if ($device->trashed() || $device->deleted_at !== null) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'This device has been deleted. The QR code is no longer valid.',
+                ], 400);
+            }
+
+            // Note: Rejected devices are allowed - they can still be denied by security
+            // Only deleted, not registered, and expired show errors without popup
+        } catch (\Illuminate\Validation\ValidationException $e) {
             return response()->json([
                 'success' => false,
-                'message' => 'QR code not found',
-            ], 404);
+                'message' => 'Invalid request. Please provide valid QR code hash and gate name.',
+                'errors' => $e->errors()
+            ], 422);
+        } catch (\Exception $e) {
+            \Log::error('Error denying QR code: ' . $e->getMessage());
+            return response()->json([
+                'success' => false,
+                'message' => 'An error occurred while processing the denial. Please try again.',
+            ], 500);
         }
 
         // Get or create gate
@@ -262,12 +493,20 @@ class DeviceEntryController extends Controller
         }
 
         // Create entry log with failed status
-        $entryLog = $this->entryLogService->createEntryLog([
-            'qr_code_hash' => $validated['qr_hash'],
-            'gate_id' => $gate->gate_id,
-            'security_guard_id' => $securityGuardId,
-            'status' => 'failed',
-        ]);
+        try {
+            $entryLog = $this->entryLogService->createEntryLog([
+                'qr_code_hash' => $validated['qr_hash'],
+                'gate_id' => $gate->gate_id,
+                'security_guard_id' => $securityGuardId,
+                'status' => 'failed',
+            ]);
+        } catch (\Exception $e) {
+            \Log::error('Error creating entry log: ' . $e->getMessage());
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to log entry. Please try again.',
+            ], 500);
+        }
 
         return response()->json([
             'success' => true,
@@ -300,10 +539,10 @@ class DeviceEntryController extends Controller
                 'gate' => $entry->gate->gate_name ?? 'Unknown Gate',
                 'gateLocation' => $entry->gate->location ?? 'N/A',
                 'time' => $entry->scan_timestamp 
-                    ? $entry->scan_timestamp->format('M d, Y h:i A') 
+                    ? $entry->scan_timestamp->setTimezone(config('app.timezone'))->format('M d, Y h:i A') 
                     : 'N/A',
-                'date' => $entry->scan_timestamp ? $entry->scan_timestamp->format('M d, Y') : 'N/A',
-                'fullTimestamp' => $entry->scan_timestamp ? $entry->scan_timestamp->format('M d, Y h:i A') : 'N/A',
+                'date' => $entry->scan_timestamp ? $entry->scan_timestamp->setTimezone(config('app.timezone'))->format('M d, Y') : 'N/A',
+                'fullTimestamp' => $entry->scan_timestamp ? $entry->scan_timestamp->setTimezone(config('app.timezone'))->format('M d, Y h:i A') : 'N/A',
                 'device' => $device ? ($device->brand . ' ' . $device->model) : 'Unknown Device',
                 'deviceType' => $device->device_type ?? 'N/A',
                 'deviceSerial' => $device->serial_number ?? 'N/A',
@@ -311,7 +550,8 @@ class DeviceEntryController extends Controller
                 'studentId' => $student->id ?? 'N/A',
                 // 'studentDepartment' => $student->department ?? 'N/A',
                 'studentCourse' => $student->course ?? 'N/A',
-                'status' => $entry->status,
+                'status' => $entry->status, // 'success' for approved, 'failed' for denied
+                'accessStatus' => $entry->status === 'success' ? 'approved' : 'denied', // User-friendly status
                 'securityGuard' => $entry->securityGuard->name ?? 'Unknown',
                 'securityGuardId' => $entry->securityGuard->guard_id ?? 'N/A',
             ];
