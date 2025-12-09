@@ -27,6 +27,7 @@ class SecurityGuardController extends Controller
             'name' => 'required|string|max:100',
             'email' => 'nullable|email|max:158',
             'phone' => 'nullable|string|max:15',
+            'password' => 'required|string|min:6',
         ]);
 
         $guard = $this->securityGuardService->createSecurityGuard($validated);
@@ -45,6 +46,7 @@ class SecurityGuardController extends Controller
             'name' => 'sometimes|string|max:100',
             'email' => 'sometimes|nullable|email|max:158',
             'phone' => 'sometimes|nullable|string|max:15',
+            'password' => 'sometimes|string|min:6',
         ]);
 
         $guard = $this->securityGuardService->updateSecurityGuard($id, $validated);

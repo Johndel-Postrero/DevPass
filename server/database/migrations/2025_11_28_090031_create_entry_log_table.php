@@ -15,14 +15,16 @@ return new class extends Migration
         if (!Schema::hasTable('entry_log')) {
             Schema::create('entry_log', function (Blueprint $table) {
                 $table->id('log_id');
-                $table->string('qr_code_hash', 255);
+                $table->unsignedBigInteger('qr_id'); // Fixed: Use PK instead of qr_code_hash for proper normalization
+                $table->string('qr_code_hash', 255)->nullable(); // Keep for backward compatibility/reference
                 $table->unsignedBigInteger('gate_id');
                 $table->string('security_guard_id', 20);
                 $table->timestamp('scan_timestamp')->nullable();
                 $table->string('status', 20)->default('success');
                 $table->timestamps();
                 
-                $table->foreign('qr_code_hash')->references('qr_code_hash')->on('qr_codes')->onDelete('cascade');
+                // Use qr_id (PK) for foreign key - proper normalization
+                $table->foreign('qr_id')->references('qr_id')->on('qr_codes')->onDelete('cascade');
                 $table->foreign('gate_id')->references('gate_id')->on('gates')->onDelete('cascade');
                 $table->foreign('security_guard_id')->references('guard_id')->on('security_guards')->onDelete('cascade');
                 $table->index('scan_timestamp');

@@ -26,6 +26,8 @@ import {
 } from 'lucide-react';
 import { securityService } from '../../services/securityService';
 import { authService } from '../../services/authService';
+import api, { setRedirectHandledByComponent } from '../../api/axios';
+import { logRefresh } from '../../utils/debugRefresh';
 
 function ScanResultModal({ result, darkMode, onClose, onAccept, onDeny, gate, processing = false }) {
   const textPrimary = darkMode ? 'text-white' : 'text-gray-900';
@@ -99,17 +101,6 @@ function ScanResultModal({ result, darkMode, onClose, onAccept, onDeny, gate, pr
                         </div>
                       </div>
                     )}
-                   {studentData.student_department && (
-                    <div className="flex items-center gap-3">
-                      <User className={`w-5 h-5 ${textSecondary}`} />
-                      <div className="flex-1">
-                        <p className={`text-xs ${textSecondary}`}>Department</p>
-                        <p className={`font-semibold ${textPrimary}`}>
-                          {studentData.student_department?.dept_name || studentData.student_department}
-                        </p>
-                      </div>
-                    </div>
-                  )}
                   {studentData.student_course && (
                     <div className="flex items-center gap-3">
                       <User className={`w-5 h-5 ${textSecondary}`} />
@@ -205,6 +196,8 @@ export default function SecurityPersonnel() {
   const [error, setError] = useState(null);
   const [selectedScan, setSelectedScan] = useState(null);
   const [showSettings, setShowSettings] = useState(false);
+  const [security, setSecurity] = useState(null);
+  const [isAuthenticated, setIsAuthenticated] = useState(true); // Track auth status to stop polling
 
   const [stats, setStats] = useState({
     scansToday: 0,
@@ -216,6 +209,13 @@ export default function SecurityPersonnel() {
   const canvasRef = useRef(null);
   const scanIntervalRef = useRef(null);
   const isScanningRef = useRef(false);
+  const redirectingRef = useRef(false); // Prevent multiple redirects
+  const loadingStateRef = useRef(false);
+  const isScanningStateRef = useRef(false);
+  const isAuthenticatedStateRef = useRef(true);
+  const isLoadingDataRef = useRef(false); // Track if loadData is currently running
+  const checkAuthCompletedRef = useRef(false); // Track if checkAuth has completed successfully
+  const lastLoadTimeRef = useRef(0); // Track when loadData was last called
 
   const bgClass = darkMode 
     ? 'bg-black text-white' 
@@ -233,58 +233,391 @@ export default function SecurityPersonnel() {
   const textSecondary = darkMode ? 'text-gray-400' : 'text-gray-600';
   const textMuted = darkMode ? 'text-gray-500' : 'text-gray-500';
 
-  // Check authentication and load data on mount
+  // Load security data from storage (only once on mount)
   useEffect(() => {
+    let isMounted = true;
+    let hasLoaded = false;
+    
+    const loadSecurityData = async () => {
+      // Prevent multiple calls
+      if (hasLoaded) return;
+      hasLoaded = true;
+      
+      try {
+        const rememberMe = localStorage.getItem('rememberMe') === 'true';
+        const storage = rememberMe ? localStorage : sessionStorage;
+        
+        // First, try to get from storage (stored as 'student' key for backward compatibility)
+        const storedUser = authService.getCurrentStudent();
+        if (storedUser) {
+          // Check if it's a security guard by guard_id
+          if (storedUser.guard_id) {
+            if (isMounted) {
+              setSecurity(storedUser);
+            }
+            return;
+          }
+          // Also check user_type
+          const userType = storage.getItem('user_type');
+          if (userType === 'security') {
+            // It's a security guard, but data might not have guard_id yet
+            // Fetch from API to get complete data
+          } else {
+            // Not a security guard, don't proceed
+            return;
+          }
+        }
+        
+        // If not in storage or needs to fetch, get from API profile
+        const response = await api.get('/auth/profile');
+        if (response.data && isMounted) {
+          // The profile endpoint returns the user wrapped in 'student' key for consistency
+          const userData = response.data.student || response.data;
+          if (userData) {
+            // Check if it's a security guard
+            if (userData.guard_id) {
+              setSecurity(userData);
+              // Store in the same storage type as the token
+              storage.setItem('student', JSON.stringify(userData));
+              storage.setItem('user_type', 'security');
+            } else {
+              // Not a security guard, but if userType is security, it might be a timing issue
+              // Store what we have and let checkAuth handle it
+              const userType = storage.getItem('user_type');
+              if (userType === 'security') {
+                // Still a security guard, just missing guard_id - store what we have
+                setSecurity(userData);
+                storage.setItem('student', JSON.stringify(userData));
+              } else {
+                // Not a security guard, but don't redirect here - let checkAuth handle it
+                // Redirecting here can cause loops if checkAuth hasn't run yet
+                console.warn('User is not a security guard, but checkAuth will handle redirect');
+              }
+            }
+          }
+        }
+      } catch (error) {
+        console.error('Error fetching security profile:', error);
+        // For 401 errors, checkAuth will handle the redirect
+        // Don't redirect here to avoid conflicts
+        if (error.response?.status === 401) {
+          // Let checkAuth handle it - don't do anything here
+          return;
+        }
+        // For 500 or other critical errors, redirect
+        if (error.response?.status === 500 || !error.response) {
+          if (isMounted) {
+            const userType = localStorage.getItem('user_type') || sessionStorage.getItem('user_type');
+            // Only redirect if we're not sure it's a security guard
+            if (userType !== 'security') {
+              localStorage.removeItem('token');
+              localStorage.removeItem('student');
+              localStorage.removeItem('user_type');
+              sessionStorage.removeItem('token');
+              sessionStorage.removeItem('student');
+              sessionStorage.removeItem('user_type');
+              navigate('/');
+            }
+          }
+        }
+      }
+    };
+    
+    loadSecurityData();
+    
+    return () => {
+      isMounted = false;
+    };
+    // Only run once on mount
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Check authentication and load data on mount (only once)
+  useEffect(() => {
+    // Prevent running if already completed
+    if (checkAuthCompletedRef.current) {
+      logRefresh('SecurityPersonnel: checkAuth useEffect skipped - already completed', {});
+      return;
+    }
+    
+    logRefresh('SecurityPersonnel: checkAuth useEffect mounted', {});
+    let isMounted = true;
+    let checkTimer = null;
+    
     const checkAuth = async () => {
+      // Double-check to prevent multiple runs
+      if (checkAuthCompletedRef.current) {
+        logRefresh('SecurityPersonnel: checkAuth skipped - already completed', {});
+        return;
+      }
+      
+      logRefresh('SecurityPersonnel: checkAuth function called', {
+        isAuthenticated: authService.isAuthenticated(),
+        isSecurity: authService.isSecurity()
+      });
       try {
         // Check authentication
         if (!authService.isAuthenticated()) {
-          setError('Not authenticated. Redirecting...');
-          setTimeout(() => navigate('/'), 1000);
-          setLoading(false);
+          logRefresh('SecurityPersonnel: Not authenticated', {});
+          if (isMounted && !redirectingRef.current) {
+            redirectingRef.current = true;
+            // Clear storage before redirect to prevent Landing page from redirecting back
+            localStorage.removeItem('token');
+            localStorage.removeItem('student');
+            localStorage.removeItem('user_type');
+            localStorage.removeItem('rememberMe');
+            sessionStorage.removeItem('token');
+            sessionStorage.removeItem('student');
+            sessionStorage.removeItem('user_type');
+            setError('Not authenticated. Redirecting...');
+            setTimeout(() => {
+              if (redirectingRef.current) {
+                window.location.replace('/');
+              }
+            }, 1000);
+            setLoading(false);
+          }
           return;
         }
         
-        // Check if user is security
+        // Check if user is security (using user_type first, then fallback)
         if (!authService.isSecurity()) {
-          setError('Access denied. Redirecting...');
-          setTimeout(() => navigate('/'), 1000);
+          if (isMounted && !redirectingRef.current) {
+            redirectingRef.current = true;
+            // Clear storage before redirect to prevent Landing page from redirecting back
+            localStorage.removeItem('token');
+            localStorage.removeItem('student');
+            localStorage.removeItem('user_type');
+            localStorage.removeItem('rememberMe');
+            sessionStorage.removeItem('token');
+            sessionStorage.removeItem('student');
+            sessionStorage.removeItem('user_type');
+            setError('Access denied. Redirecting...');
+            setTimeout(() => {
+              if (redirectingRef.current) {
+                window.location.replace('/');
+              }
+            }, 1000);
+            setLoading(false);
+          }
+          return;
+        }
+        
+        // Wait for security data to be loaded (give it time to fetch from API if needed)
+        let attempts = 0;
+        const maxAttempts = 10; // Wait up to 2 seconds (10 * 200ms)
+        
+        const rememberMe = localStorage.getItem('rememberMe') === 'true';
+        const storage = rememberMe ? localStorage : sessionStorage;
+        const userType = storage.getItem('user_type');
+        
+        // If user_type is 'security', we know it's a security guard
+        // We can proceed even if guard_id isn't loaded yet (it will be loaded by loadSecurityData)
+        if (userType === 'security') {
+          // Give a brief moment for loadSecurityData to complete, but don't wait too long
+          while (attempts < maxAttempts && isMounted) {
+            const userData = security || authService.getCurrentStudent();
+            
+            // If we have security guard data with guard_id, we're good
+            if (userData && userData.guard_id) {
+              break;
+            }
+            
+            // Wait a bit for data to load from API
+            await new Promise(resolve => setTimeout(resolve, 200));
+            attempts++;
+          }
+        } else {
+          // Not a security guard, should have been caught earlier, but double-check
+          const userData = security || authService.getCurrentStudent();
+          if (!userData || !userData.guard_id) {
+            if (isMounted && !redirectingRef.current) {
+              redirectingRef.current = true;
+              // Clear storage before redirect
+              localStorage.removeItem('token');
+              localStorage.removeItem('student');
+              localStorage.removeItem('user_type');
+              localStorage.removeItem('rememberMe');
+              sessionStorage.removeItem('token');
+              sessionStorage.removeItem('student');
+              sessionStorage.removeItem('user_type');
+              setError('Access denied. Redirecting...');
+              setTimeout(() => {
+                if (redirectingRef.current) {
+                  window.location.replace('/');
+                }
+              }, 1000);
+            }
+            setLoading(false);
+            return;
+          }
+        }
+        
+        // Final check: verify we're still authenticated and security
+        if (!isMounted) return;
+        
+        if (!authService.isAuthenticated() || !authService.isSecurity()) {
+          if (!redirectingRef.current) {
+            redirectingRef.current = true;
+            // Clear storage before redirect to prevent Landing page from redirecting back
+            localStorage.removeItem('token');
+            localStorage.removeItem('student');
+            localStorage.removeItem('user_type');
+            localStorage.removeItem('rememberMe');
+            sessionStorage.removeItem('token');
+            sessionStorage.removeItem('student');
+            sessionStorage.removeItem('user_type');
+            setError('Access denied. Redirecting...');
+            setTimeout(() => {
+              if (redirectingRef.current) {
+                window.location.replace('/');
+              }
+            }, 1000);
+          }
           setLoading(false);
           return;
         }
         
         // Load data for current gate
-        await loadData();
+        if (isMounted) {
+          logRefresh('SecurityPersonnel: Calling loadData from checkAuth', { gate });
+          await loadData();
+          setLoading(false);
+          // Mark checkAuth as completed only after successful load
+          checkAuthCompletedRef.current = true;
+          logRefresh('SecurityPersonnel: checkAuth completed successfully', {});
+        }
       } catch (err) {
-        console.error('Auth check error:', err);
-        setError('Authentication error. Redirecting...');
-        setTimeout(() => navigate('/'), 2000);
-        setLoading(false);
+        if (isMounted) {
+          console.error('Auth check error:', err);
+          // Only redirect on auth errors, not other errors
+          if (err.response?.status === 401) {
+            if (!redirectingRef.current) {
+              redirectingRef.current = true;
+              // Clear storage before redirect to prevent Landing page from redirecting back
+              localStorage.removeItem('token');
+              localStorage.removeItem('student');
+              localStorage.removeItem('user_type');
+              localStorage.removeItem('rememberMe');
+              sessionStorage.removeItem('token');
+              sessionStorage.removeItem('student');
+              sessionStorage.removeItem('user_type');
+              setError('Authentication error. Redirecting...');
+              setTimeout(() => {
+                if (redirectingRef.current) {
+                  window.location.replace('/');
+                }
+              }, 2000);
+            }
+          } else {
+            setError('Failed to load data. Please refresh the page.');
+          }
+          setLoading(false);
+        }
       }
     };
     
-    // Run check after a small delay to ensure component renders first
-    const timer = setTimeout(() => {
+    // Run check after a short delay to allow security data to load first
+    checkTimer = setTimeout(() => {
       checkAuth();
-    }, 100);
+    }, 300);
     
-    return () => clearTimeout(timer);
+    return () => {
+      isMounted = false;
+      if (checkTimer) clearTimeout(checkTimer);
+    };
+    // Only run once on mount, not when security changes
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []); // Only run on mount
+  }, []); // Empty dependency array - run only once
 
-  // Load data when gate changes
+  // Load data when gate changes (but only after initial load is complete)
   useEffect(() => {
-    if (authService.isAuthenticated() && authService.isSecurity()) {
-      loadData();
+    logRefresh('SecurityPersonnel: Gate change useEffect', { 
+      gate, 
+      isLoadingData: isLoadingDataRef.current,
+      isRedirecting: redirectingRef.current,
+      isAuthenticated: authService.isAuthenticated(),
+      isSecurity: authService.isSecurity()
+    });
+    
+    // Only load if we're authenticated, security, not currently loading data, and not redirecting
+    if (authService.isAuthenticated() && authService.isSecurity() && !isLoadingDataRef.current && !redirectingRef.current) {
+      // Use a small delay to ensure previous loadData has completed
+      const timer = setTimeout(() => {
+        // Double-check conditions before loading
+        if (!isLoadingDataRef.current && !redirectingRef.current && 
+            authService.isAuthenticated() && authService.isSecurity()) {
+          logRefresh('SecurityPersonnel: Calling loadData from gate change', { gate });
+          loadData();
+        } else {
+          logRefresh('SecurityPersonnel: Skipping loadData from gate change - conditions not met', {
+            isLoadingData: isLoadingDataRef.current,
+            isRedirecting: redirectingRef.current,
+            isAuthenticated: authService.isAuthenticated(),
+            isSecurity: authService.isSecurity()
+          });
+        }
+      }, 150);
+      return () => clearTimeout(timer);
+    } else {
+      logRefresh('SecurityPersonnel: Skipping gate change load - initial conditions not met', {
+        isLoadingData: isLoadingDataRef.current,
+        isRedirecting: redirectingRef.current,
+        isAuthenticated: authService.isAuthenticated(),
+        isSecurity: authService.isSecurity()
+      });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [gate]);
 
+  // Update refs when values change (for use in other functions)
+  useEffect(() => {
+    loadingStateRef.current = loading;
+    isScanningStateRef.current = isScanning;
+    isAuthenticatedStateRef.current = isAuthenticated;
+  }, [loading, isScanning, isAuthenticated]);
+
   // Load statistics and recent scans for current gate only
   const loadData = async () => {
+    const now = Date.now();
+    const MIN_TIME_BETWEEN_LOADS = 2000; // Minimum 2 seconds between loads
+    const timeSinceLastLoad = now - lastLoadTimeRef.current;
+    
+    logRefresh('SecurityPersonnel: loadData called', {
+      gate,
+      isLoadingData: isLoadingDataRef.current,
+      isRedirecting: redirectingRef.current,
+      timeSinceLastLoad
+    });
+    
+    // Prevent multiple simultaneous calls using ref (more reliable than state)
+    if (isLoadingDataRef.current) {
+      logRefresh('SecurityPersonnel: loadData skipped - already loading', {});
+      return;
+    }
+    
+    // Prevent rapid successive calls (throttle)
+    if (timeSinceLastLoad < MIN_TIME_BETWEEN_LOADS && lastLoadTimeRef.current > 0) {
+      logRefresh('SecurityPersonnel: loadData skipped - too soon since last load', {
+        timeSinceLastLoad,
+        minTime: MIN_TIME_BETWEEN_LOADS
+      });
+      return;
+    }
+    
+    // Don't load if we're redirecting
+    if (redirectingRef.current) {
+      logRefresh('SecurityPersonnel: loadData skipped - redirecting', {});
+      return;
+    }
+    
+    // Mark as loading immediately and update last load time
+    isLoadingDataRef.current = true;
+    lastLoadTimeRef.current = now;
     setLoading(true);
     setError(null);
     try {
+      logRefresh('SecurityPersonnel: loadData API calls starting', { gate });
       const [statsData, activitiesData] = await Promise.all([
         securityService.getStatistics(gate),
         securityService.getRecentScans(50, gate)
@@ -306,7 +639,6 @@ export default function SecurityPersonnel() {
           fullTimestamp: activity.fullTimestamp || activity.time,
           deviceType: activity.deviceType,
           deviceSerial: activity.deviceSerial,
-          studentDepartment: activity.studentDepartment,
           studentCourse: activity.studentCourse,
           gateLocation: activity.gateLocation,
           securityGuard: activity.securityGuard,
@@ -314,24 +646,70 @@ export default function SecurityPersonnel() {
         }));
       
       setScanHistory(formattedActivities);
+      logRefresh('SecurityPersonnel: loadData completed successfully', { 
+        gate,
+        statsCount: statsData?.scansToday || 0,
+        activitiesCount: formattedActivities.length
+      });
     } catch (err) {
+      logRefresh('SecurityPersonnel: loadData failed', {
+        error: err.message,
+        status: err.response?.status,
+        gate
+      });
       console.error('Failed to load data:', err);
       setError(err.message || 'Failed to load data');
       // Set default values on error
       setStats({ scansToday: 0, successRate: 0, lastHour: 0 });
       setScanHistory([]);
       
-      // Only redirect if it's a real authentication error (401) and no token exists
+      // Handle 401 errors - account was deleted or token is invalid
       if (err.response?.status === 401) {
-        const token = sessionStorage.getItem('token') || localStorage.getItem('token');
-        if (!token) {
-          // No token means we're already logged out
-          setTimeout(() => {
-            navigate('/');
-          }, 2000);
+        logRefresh('SecurityPersonnel: 401 error in loadData - redirecting', { gate });
+        // Prevent multiple redirects
+        if (redirectingRef.current) {
+          isLoadingDataRef.current = false;
+          setLoading(false);
+          return;
         }
+        redirectingRef.current = true;
+        
+        // Tell axios interceptor that we're handling the redirect
+        setRedirectHandledByComponent(true);
+        
+        // Mark as not authenticated to stop polling
+        setIsAuthenticated(false);
+        isAuthenticatedStateRef.current = false;
+        
+        // Clear all storage (axios interceptor will also do this, but we do it here for immediate effect)
+        localStorage.removeItem('token');
+        localStorage.removeItem('student');
+        localStorage.removeItem('user_type');
+        localStorage.removeItem('rememberMe');
+        sessionStorage.removeItem('token');
+        sessionStorage.removeItem('student');
+        sessionStorage.removeItem('user_type');
+        
+        // Show error message
+        setError('Your session has expired or your account has been deleted. Redirecting to login...');
+        
+        // Redirect to login (only once) - redirect faster than interceptor to handle it first
+        // Use a flag to prevent Landing page from redirecting back
+        window.__securityRedirecting = true;
+        setTimeout(() => {
+          if (redirectingRef.current && window.location.pathname !== '/') {
+            logRefresh('SecurityPersonnel: Executing redirect to /', {});
+            window.location.replace('/');
+          }
+          // Clear flag after redirect
+          setTimeout(() => {
+            window.__securityRedirecting = false;
+          }, 2000);
+        }, 1500);
       }
     } finally {
+      // Always reset loading state
+      isLoadingDataRef.current = false;
       setLoading(false);
     }
   };
@@ -609,20 +987,33 @@ export default function SecurityPersonnel() {
           qr_hash: hash // Store hash for accept/deny actions
         });
       } else {
-        // QR not found in system - show error
+        // QR not found in system or invalid - show error in modal
         setScanResult({
           valid: false,
-          message: readResult.message || 'QR code is not from the DevPass system. This QR code is not registered in our database.',
-          student_data: null
+          message: readResult.message || 'QR code is not registered in the system or the device is not active.',
+          student_data: null,
+          device: null
         });
       }
       
     } catch (error) {
       console.error('QR read error:', error);
+      // Get user-friendly error message
+      let errorMessage = 'QR code is not registered in the system or the device is not active.';
+      
+      if (error.response?.data?.message) {
+        errorMessage = error.response.data.message;
+      } else if (error.response?.status === 404) {
+        errorMessage = 'QR code is not registered in the system. This QR code does not exist in our database.';
+      } else if (error.response?.status === 400) {
+        errorMessage = 'QR code is expired or inactive. Please renew the QR code.';
+      }
+      
       setScanResult({
         valid: false,
-        message: error.response?.data?.message || 'QR code is not from the DevPass system. This QR code is not registered in our database.',
-        student_data: null
+        message: errorMessage,
+        student_data: null,
+        device: null
       });
     }
   };
@@ -651,6 +1042,19 @@ export default function SecurityPersonnel() {
       
       console.log('Accept result:', result);
       
+      // Check if validation failed
+      if (result.status === 'failed' || result.success === false || !result.valid) {
+        const errorMessage = result.message || 'QR code is not valid or not found in the system.';
+        setScanResult({
+          valid: false,
+          message: errorMessage,
+          student_data: null,
+          device: null
+        });
+        setProcessingDecision(false);
+        return;
+      }
+      
       // Show success message
       setScanResult({
         ...result,
@@ -670,8 +1074,15 @@ export default function SecurityPersonnel() {
       
     } catch (error) {
       console.error('Accept error:', error);
-      const errorMessage = error.response?.data?.message || error.message || 'Failed to process acceptance. Please try again.';
-      alert(errorMessage);
+      const errorMessage = error.response?.data?.message || error.message || 'QR code is not registered in the system or the device is not active.';
+      
+      // Show error in modal instead of alert
+      setScanResult({
+        valid: false,
+        message: errorMessage,
+        student_data: null,
+        device: null
+      });
       setProcessingDecision(false);
     }
   };
@@ -1155,7 +1566,7 @@ export default function SecurityPersonnel() {
                 )}
 
                 {/* Time Information */}
-                {selectedScan.time && (
+                {selectedScan.fullTimestamp && (
                   <div className={`p-4 rounded-xl ${darkMode ? 'bg-white/5' : 'bg-gray-50'}`}>
                     <h3 className={`text-lg font-semibold ${textPrimary} mb-3 flex items-center gap-2`}>
                       <Clock className="w-5 h-5" />
@@ -1163,8 +1574,16 @@ export default function SecurityPersonnel() {
                     </h3>
                     <div className="space-y-2">
                       <div className="flex justify-between">
+                        <span className={`text-sm ${textSecondary}`}>Date:</span>
+                        <span className={`text-sm font-semibold ${textPrimary}`}>{selectedScan.date || selectedScan.fullTimestamp?.split(' ').slice(0, 3).join(' ') || 'N/A'}</span>
+                      </div>
+                      <div className="flex justify-between">
                         <span className={`text-sm ${textSecondary}`}>Time:</span>
-                        <span className={`text-sm font-semibold ${textPrimary}`}>{selectedScan.time}</span>
+                        <span className={`text-sm font-semibold ${textPrimary}`}>{selectedScan.time || selectedScan.fullTimestamp?.split(' ').slice(3).join(' ') || 'N/A'}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className={`text-sm ${textSecondary}`}>Full Timestamp:</span>
+                        <span className={`text-sm font-semibold ${textPrimary}`}>{selectedScan.fullTimestamp || 'N/A'}</span>
                       </div>
                     </div>
                   </div>
@@ -1187,14 +1606,22 @@ export default function SecurityPersonnel() {
         <SecuritySettingsModal 
           darkMode={darkMode} 
           onClose={() => setShowSettings(false)}
-          securityData={{
-            name: "John Security", // Replace with actual data from your auth service
-            email: "john.security@university.edu",
+          securityData={security || {
+            name: "Security Personnel",
+            email: "security@devpass.com",
             phone: "+63 912 345 6789",
             employeeId: "SEC001",
             assignedGate: gate, // Current gate from state
             role: "Security Personnel",
             joinDate: "January 15, 2024"
+          }}
+          onUpdate={(updatedSecurity) => {
+            // Update security state if it exists
+            const rememberMe = localStorage.getItem('rememberMe') === 'true';
+            const storage = rememberMe ? localStorage : sessionStorage;
+            if (updatedSecurity) {
+              storage.setItem('security', JSON.stringify(updatedSecurity));
+            }
           }}
         />
       )}

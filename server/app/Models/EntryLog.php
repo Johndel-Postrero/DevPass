@@ -14,6 +14,7 @@ class EntryLog extends Model
     protected $primaryKey = 'log_id';
 
     protected $fillable = [
+        'qr_id',
         'qr_code_hash',
         'gate_id',
         'security_guard_id',

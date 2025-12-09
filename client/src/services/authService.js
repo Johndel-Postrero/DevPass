@@ -22,7 +22,13 @@ export const authService = {
         if (response.data.token) {
             const storage = rememberMe ? localStorage : sessionStorage;
             storage.setItem('token', response.data.token);
+            // Store user data (could be student or security guard)
+            // The backend returns it as 'student' key for backward compatibility
             storage.setItem('student', JSON.stringify(response.data.student));
+            // Also store user_type if provided
+            if (response.data.user_type) {
+                storage.setItem('user_type', response.data.user_type);
+            }
             // Also store a flag to know which storage was used
             if (rememberMe) {
                 localStorage.setItem('rememberMe', 'true');
@@ -71,33 +77,34 @@ export const authService = {
         return !!(localStorage.getItem('token') || sessionStorage.getItem('token'));
     },
 
-    forgotPassword: async (email) => {
-        const response = await api.post('/auth/forgot-password', { email });
-        return response.data;
-    },
-
-    resetPassword: async (email, code, password, passwordConfirmation) => {
-        const response = await api.post('/auth/reset-password', {
-            email,
-            code,
-            password,
-            password_confirmation: passwordConfirmation
-        });
-        return response.data;
-    },
-
     isSecurity: () => {
-        // Check localStorage first (remember me), then sessionStorage
+        // First check user_type (most reliable)
+        const userType = localStorage.getItem('user_type') || sessionStorage.getItem('user_type');
+        if (userType === 'security') {
+            return true;
+        }
+        
+        // Fallback: Check localStorage first (remember me), then sessionStorage
         const studentData = localStorage.getItem('student') || sessionStorage.getItem('student');
         if (!studentData) return false;
         
         try {
-            const student = JSON.parse(studentData);
-            const course = student.course?.toLowerCase() || '';
-            const email = student.email?.toLowerCase() || '';
+            const user = JSON.parse(studentData);
+            // Check if it's a security guard by looking for guard_id field
+            if (user.guard_id) {
+                return true;
+            }
+            // Backward compatibility: check by course or email
+            const course = user.course?.toLowerCase() || '';
+            const email = user.email?.toLowerCase() || '';
             return course === 'security' || course === 'personnel' || email.includes('security@devpass');
         } catch (e) {
             return false;
         }
+    },
+
+    updateProfile: async (profileData) => {
+        const response = await api.put('/auth/profile', profileData);
+        return response.data;
     }
 };

@@ -2,7 +2,6 @@
 export const studentInfo = {
   name: "Jan Lorenz Laroco",
   studentId: "STU123456",
-  department: "CCS",
   course: "BSIT",
   year: 3
 };

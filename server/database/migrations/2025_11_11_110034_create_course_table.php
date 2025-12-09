@@ -11,16 +11,18 @@ return new class extends Migration
      */
     public function up(): void
     {
+        if (!Schema::hasTable('course')) {
             Schema::create('course', function (Blueprint $table) {
-            $table->string('course_id')->primary();
-            $table->string('course_name');
-            $table->string('course_code');
-            $table->string('description');
-            $table->timestamps();
+                $table->string('course_id')->primary();
+                $table->string('course_name');
+                $table->string('course_code');
+                $table->string('description');
+                $table->timestamps();
 
-            // $table->string('department_id');
-            // $table->foreign('department_id')->references('department_id')->on('department')->onDelete('cascade');
-        });
+                // $table->string('department_id');
+                // $table->foreign('department_id')->references('department_id')->on('department')->onDelete('cascade');
+            });
+        }
     }
 
     /**
