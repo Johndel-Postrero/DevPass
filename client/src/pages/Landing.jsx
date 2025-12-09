@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Eye, EyeOff, Lock, User, Zap, Shield, Rocket, Moon, Sun, Mail, GraduationCap, Calendar, X, ChevronRight, ChevronLeft, Check, Home as HomeIcon, Info, LogIn, Users, Globe, Phone, MapPin, Facebook, Twitter, Instagram, Linkedin } from 'lucide-react';
+import { Eye, EyeOff, Lock, User, Zap, Shield, Rocket, Moon, Sun, Mail, GraduationCap, Calendar, X, ChevronRight, ChevronLeft, Check, Home as HomeIcon, Info, LogIn, Users, Globe, Phone, MapPin, Facebook, Twitter, Instagram, Linkedin, HelpCircle } from 'lucide-react';
 import { authService } from '../services/authService';
 import { useNavigate } from 'react-router-dom';
 import {motion} from 'framer-motion';
@@ -8,11 +8,10 @@ export default function Landing() {
   const [isLogin, setIsLogin] = useState(true);
   const [showPassword, setShowPassword] = useState(false);
   const [darkMode, setDarkMode] = useState(true);
-  const [showForgotPassword, setShowForgotPassword] = useState(false);
-  const [forgotPasswordStep, setForgotPasswordStep] = useState('email');
   const [rememberMe, setRememberMe] = useState(false);
   const [activeSection, setActiveSection] = useState('home');
   const [registerStep, setRegisterStep] = useState(1);
+  const [showForgotPasswordModal, setShowForgotPasswordModal] = useState(false);
   const navigate = useNavigate();
   const staticCourseData = [
       {
@@ -124,19 +123,9 @@ export default function Landing() {
     password_confirmation: '',
   });
 
-  const [forgotPasswordData, setForgotPasswordData] = useState({
-    email: '',
-    code: '',
-    password: '',
-    password_confirmation: '',
-  });
-  
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
-  const [forgotPasswordLoading, setForgotPasswordLoading] = useState(false);
-  const [forgotPasswordMessage, setForgotPasswordMessage] = useState('');
-  const [forgotPasswordError, setForgotPasswordError] = useState('');
 
   const handleChange = (e) => {
     setFormData({
@@ -145,9 +134,20 @@ export default function Landing() {
     });
   };
 
-  const getRedirectPath = (user) => {
+  const getRedirectPath = (user, userType = null) => {
     if (!user) return '/student/dashboard';
     
+    // Check user_type first (most reliable)
+    if (userType === 'security') {
+      return '/personnel/dashboard';
+    }
+    
+    // Check if it's a security guard (has guard_id field)
+    if (user.guard_id) {
+      return '/personnel/dashboard';
+    }
+    
+    // Check if it's an admin
     const course = user.course?.toLowerCase() || '';
     const email = user.email?.toLowerCase() || '';
     
@@ -155,20 +155,49 @@ export default function Landing() {
       return '/admin/dashboard';
     }
     
+    // Check if it's a security guard by course or email (for backward compatibility)
     if (course === 'security' || course === 'personnel' || email.includes('security@devpass')) {
       return '/personnel/dashboard';
     }
     
+    // Default to student dashboard
     return '/student/dashboard';
   };
 
   useEffect(() => {
     const checkAuth = async () => {
+      // Add a small delay to prevent redirect loops
+      await new Promise(resolve => setTimeout(resolve, 100));
+      
       if (authService.isAuthenticated()) {
         const student = authService.getCurrentStudent();
         if (student) {
-          const redirectPath = getRedirectPath(student);
-          navigate(redirectPath);
+          // Get user_type from storage to properly identify security guards
+          const rememberMe = localStorage.getItem('rememberMe') === 'true';
+          const storage = rememberMe ? localStorage : sessionStorage;
+          const userType = storage.getItem('user_type');
+          const redirectPath = getRedirectPath(student, userType);
+          // Only redirect if we're actually on the landing page
+          const currentPath = window.location.pathname;
+          if (currentPath === '/' || currentPath === '/login') {
+            // Check if security component is redirecting to prevent loops
+            if (window.__securityRedirecting) {
+              console.warn('Landing: Security component is redirecting, skipping auto-redirect');
+              return;
+            }
+            // Check if we're already redirecting to prevent loops
+            if (!window.__redirecting) {
+              window.__redirecting = true;
+              console.log('Landing: Redirecting authenticated user to', redirectPath);
+              navigate(redirectPath);
+              // Reset flag after navigation
+              setTimeout(() => {
+                window.__redirecting = false;
+              }, 1000);
+            } else {
+              console.warn('Landing: Already redirecting, skipping');
+            }
+          }
         }
       }
     };
@@ -189,7 +218,9 @@ export default function Landing() {
         }, rememberMe);
         setMessage('✅ Login successful!');
         
-        const redirectPath = getRedirectPath(result.student);
+        // Get user_type from result or storage
+        const userType = result.user_type || (rememberMe ? localStorage.getItem('user_type') : sessionStorage.getItem('user_type'));
+        const redirectPath = getRedirectPath(result.student, userType);
         setTimeout(() => {
           navigate(redirectPath);
         }, 1000);
@@ -569,7 +600,7 @@ export default function Landing() {
   
 
 const renderHome = () => (
-  <div className="relative z-10 flex items-center justify-center min-h-[calc(100vh-80px)] p-4">
+  <div className="relative z-10 flex items-center justify-center min-h-[calc(100vh-80px)] py-4">
     <div className="w-full max-w-7xl grid lg:grid-cols-2 gap-8 lg:gap-0 items-center">
       {/* Left Side - Information */}
       <div className="lg:pr-12">
@@ -873,25 +904,16 @@ const renderHome = () => (
                   initial={{ opacity: 0, y: 10 }}
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ duration: 0.3, delay: 0.3 }}
-                  className="flex items-center justify-between"
+                  className="flex items-center justify-end"
                 >
-                  {/* <label className="flex items-center cursor-pointer gap-2">
-                    <input 
-                      type="checkbox" 
-                      checked={rememberMe}
-                      onChange={(e) => setRememberMe(e.target.checked)}
-                      className={`w-4 h-4 rounded ${checkboxColor} accent-blue-600`} 
-                    />
-                    <span className={`text-sm ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>Remember me</span>
-                  </label>
                   <motion.button
                     whileHover={{ scale: 1.05 }}
                     type="button"
-                    onClick={() => setShowForgotPassword(true)}
+                    onClick={() => setShowForgotPasswordModal(true)}
                     className={`text-sm font-medium transition-colors ${darkMode ? 'text-blue-400 hover:text-blue-300' : 'text-blue-600 hover:text-blue-700'}`}
                   >
                     Forgot password?
-                  </motion.button> */}
+                  </motion.button>
                 </motion.div>
 
                 <motion.button
@@ -957,8 +979,8 @@ const renderHome = () => (
 );
 
   const renderAbout = () => (
-  <div className="relative z-10 min-h-[calc(100vh-80px)] flex items-center justify-center p-8">
-    <div className="w-full max-w-6xl">
+  <div className="relative z-10 min-h-[calc(100vh-80px)] flex items-center justify-center py-8">
+    <div className="w-full max-w-7xl">
       {/* Title Section */}
       <motion.div
         initial={{ opacity: 0, y: -20 }}
@@ -1113,25 +1135,9 @@ const renderHome = () => (
 
   return (
     <div className={`min-h-screen ${bgClass} overflow-hidden transition-colors duration-500`}>
-      {/* Theme Toggle Button */}
-      <button
-        onClick={() => setDarkMode(!darkMode)}
-        className={`fixed top-6 right-6 z-50 p-3 rounded-full backdrop-blur-xl transition-all duration-300 ${
-          darkMode
-            ? 'bg-white/10 border border-white/20 hover:bg-white/20'
-            : 'bg-gray-900/10 border border-gray-900/20 hover:bg-gray-900/20'
-        }`}
-      >
-        {darkMode ? (
-          <Sun className="w-6 h-6 text-yellow-400" />
-        ) : (
-          <Moon className="w-6 h-6 text-indigo-600" />
-        )}
-      </button>
-
       {/* Navigation */}
       <nav className={`fixed top-0 left-0 right-0 z-40 ${navBg}`}>
-        <div className="container mx-auto px-6 py-4">
+        <div className="w-full max-w-7xl mx-auto py-4">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-8">
               <div className="flex items-center gap-3">
@@ -1165,16 +1171,21 @@ const renderHome = () => (
               </div>
             </div>
             
-            {/* <button
-              onClick={() => {
-                setActiveSection('home');
-                setIsLogin(true);
-              }}
-              className="flex items-center gap-2 px-6 py-2.5 bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-xl font-semibold hover:from-blue-700 hover:to-indigo-700 transition-all shadow-lg"
+            {/* Theme Toggle Button */}
+            <button
+              onClick={() => setDarkMode(!darkMode)}
+              className={`p-3 rounded-full backdrop-blur-xl transition-all duration-300 ${
+                darkMode
+                  ? 'bg-white/10 border border-white/20 hover:bg-white/20'
+                  : 'bg-gray-900/10 border border-gray-900/20 hover:bg-gray-900/20'
+              }`}
             >
-              <LogIn className="w-4 h-4" />
-              Sign In
-            </button> */}
+              {darkMode ? (
+                <Sun className="w-6 h-6 text-yellow-400" />
+              ) : (
+                <Moon className="w-6 h-6 text-indigo-600" />
+              )}
+            </button>
           </div>
         </div>
       </nav>
@@ -1193,7 +1204,7 @@ const renderHome = () => (
 
       {/* Footer */}
       <footer className={`${darkMode ? 'bg-black border-white/10' : 'bg-gray-50 border-gray-200'} border-t`}>
-        <div className="container mx-auto px-6 py-12">
+        <div className="w-full max-w-7xl mx-auto py-12">
           <div className="grid md:grid-cols-4 gap-8">
             <div>
               <div className="flex items-center gap-3 mb-4">
@@ -1263,12 +1274,92 @@ const renderHome = () => (
         </div>
       </footer>
 
-      {/* Forgot Password Modal (Keep this as is) */}
-      {showForgotPassword && (
-        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          {/* ... (Keep the exact same forgot password modal code from original) ... */}
-        </div>
+      {/* Forgot Password Modal */}
+      {showForgotPasswordModal && (
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4"
+          onClick={() => setShowForgotPasswordModal(false)}
+        >
+          <motion.div
+            initial={{ opacity: 0, scale: 0.9, y: 20 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            exit={{ opacity: 0, scale: 0.9, y: 20 }}
+            transition={{ duration: 0.3 }}
+            onClick={(e) => e.stopPropagation()}
+            className={`${formBg} rounded-2xl w-full max-w-md shadow-2xl border`}
+          >
+            <div className="p-6">
+              {/* Header */}
+              <div className="flex items-center justify-between mb-6">
+                <div className="flex items-center gap-3">
+                  <div className={`p-3 rounded-xl ${darkMode ? 'bg-blue-500/20 border border-blue-500/30' : 'bg-blue-100 border border-blue-300/60'}`}>
+                    <HelpCircle className={`w-6 h-6 ${darkMode ? 'text-blue-400' : 'text-blue-600'}`} />
+                  </div>
+                  <h2 className={`text-2xl font-bold ${formText}`}>Forgot Password?</h2>
+                </div>
+                <motion.button
+                  whileHover={{ scale: 1.1 }}
+                  whileTap={{ scale: 0.9 }}
+                  onClick={() => setShowForgotPasswordModal(false)}
+                  className={`p-2 rounded-lg transition-all ${darkMode ? 'hover:bg-white/10' : 'hover:bg-gray-100'}`}
+                >
+                  <X className={`w-5 h-5 ${darkMode ? 'text-gray-400' : 'text-gray-600'}`} />
+                </motion.button>
+              </div>
+
+              {/* Content */}
+              <div className="space-y-4">
+                <div className={`p-4 rounded-xl ${darkMode ? 'bg-blue-500/10 border border-blue-500/20' : 'bg-blue-50 border border-blue-200'}`}>
+                  <div className="flex items-start gap-3">
+                    <Mail className={`w-5 h-5 mt-0.5 flex-shrink-0 ${darkMode ? 'text-blue-400' : 'text-blue-600'}`} />
+                    <div>
+                      <p className={`text-sm leading-relaxed ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>
+                        If you've forgotten your password, please contact the administrator to reset it.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                <div className={`p-4 rounded-xl ${darkMode ? 'bg-white/5 border border-white/10' : 'bg-gray-50 border border-gray-200'}`}>
+                  <h3 className={`font-semibold mb-3 ${formText}`}>Contact Information</h3>
+                  <div className="space-y-2">
+                    <div className="flex items-center gap-3">
+                      <Mail className={`w-4 h-4 ${darkMode ? 'text-gray-400' : 'text-gray-600'}`} />
+                      <span className={`text-sm ${formDescText}`}>support@devpass.edu</span>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <Phone className={`w-4 h-4 ${darkMode ? 'text-gray-400' : 'text-gray-600'}`} />
+                      <span className={`text-sm ${formDescText}`}>(123) 456-7890</span>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <MapPin className={`w-4 h-4 ${darkMode ? 'text-gray-400' : 'text-gray-600'}`} />
+                      <span className={`text-sm ${formDescText}`}>Campus Main Building</span>
+                    </div>
+                  </div>
+                </div>
+
+                <p className={`text-xs text-center ${formDescText}`}>
+                  The administrator will assist you in resetting your password securely.
+                </p>
+              </div>
+
+              {/* Close Button */}
+              <motion.button
+                whileHover={{ scale: 1.02 }}
+                whileTap={{ scale: 0.98 }}
+                onClick={() => setShowForgotPasswordModal(false)}
+                className="w-full mt-6 bg-gradient-to-r from-blue-600 to-indigo-600 text-white py-3 px-4 rounded-xl font-semibold hover:from-blue-700 hover:to-indigo-700 transition-all duration-200 shadow-lg hover:shadow-blue-500/50 cursor-pointer"
+              >
+                Close
+              </motion.button>
+            </div>
+          </motion.div>
+        </motion.div>
       )}
+
     </div>
   );
 }

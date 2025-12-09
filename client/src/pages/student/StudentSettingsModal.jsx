@@ -1,5 +1,5 @@
 // StudentSettingsModal.jsx
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   X,
   User,
@@ -14,9 +14,11 @@ import {
   Building,
   GraduationCap
 } from 'lucide-react';
+import Notification from '../../components/Notification';
 
-export default function StudentSettingsModal({ darkMode, onClose, studentData }) {
+export default function StudentSettingsModal({ darkMode, onClose, studentData, onUpdate }) {
   const [editingProfile, setEditingProfile] = useState(false);
+  const [notification, setNotification] = useState(null);
   
   // Get student ID from various possible properties
   const getStudentId = () => {
@@ -30,8 +32,7 @@ export default function StudentSettingsModal({ darkMode, onClose, studentData })
   // Get course from various possible properties
   const getCourse = () => {
     return studentData?.course || 
-           studentData?.program || 
-           studentData?.department ||
+           studentData?.program ||
            'Not specified';
   };
 
@@ -57,9 +58,22 @@ export default function StudentSettingsModal({ darkMode, onClose, studentData })
     phone: studentData?.phone || '',
     studentId: getStudentId(),
     course: getCourse(),
-    department: studentData?.department || studentData?.program || '',
     joinDate: formatDate(studentData?.created_at || studentData?.joinDate || '')
   });
+
+  // Update profileData when studentData changes
+  useEffect(() => {
+    if (studentData) {
+      setProfileData({
+        name: studentData?.name || '',
+        email: studentData?.email || '',
+        phone: studentData?.phone || '',
+        studentId: getStudentId(),
+        course: getCourse(),
+        joinDate: formatDate(studentData?.created_at || studentData?.joinDate || '')
+      });
+    }
+  }, [studentData]);
 
   const bgClass = darkMode 
     ? 'bg-black/50 backdrop-blur-sm' 
@@ -78,12 +92,48 @@ export default function StudentSettingsModal({ darkMode, onClose, studentData })
 
   const handleSaveProfile = async () => {
     try {
-      setEditingProfile(false);
-      alert('Profile updated successfully');
-      onClose();
+      const { authService } = await import('../../services/authService');
+      
+      const updateData = {
+        name: profileData.name,
+        phone: profileData.phone || null,
+      };
+      
+      const response = await authService.updateProfile(updateData);
+      
+      if (response && response.student) {
+        // Update local storage with new student data
+        const rememberMe = localStorage.getItem('rememberMe') === 'true';
+        const storage = rememberMe ? localStorage : sessionStorage;
+        storage.setItem('student', JSON.stringify(response.student));
+        
+        setEditingProfile(false);
+        setNotification({
+          type: 'success',
+          title: 'Profile Updated',
+          message: 'Your name has been updated successfully.',
+          autoClose: true,
+        });
+        
+        // Call onUpdate callback to update dashboard
+        if (onUpdate) {
+          onUpdate(response.student);
+        }
+        
+        // Close modal after a short delay
+        setTimeout(() => {
+          onClose();
+        }, 1500);
+      }
     } catch (error) {
       console.error('Error updating profile:', error);
-      alert('Failed to update profile');
+      const errorMessage = error.response?.data?.message || error.message || 'Failed to update profile';
+      setNotification({
+        type: 'error',
+        title: 'Update Failed',
+        message: errorMessage,
+        autoClose: true,
+      });
     }
   };
 
@@ -255,18 +305,6 @@ export default function StudentSettingsModal({ darkMode, onClose, studentData })
                       </div>
                     </div>
 
-                    {/* Department */}
-                    <div className={`p-4 sm:p-5 rounded-lg sm:rounded-xl ${darkMode ? 'bg-white/5' : 'bg-white/60'} transition-all hover:${darkMode ? 'bg-white/10' : 'bg-white/80'}`}>
-                      <div className="flex items-start gap-3">
-                        <div className={`p-2 rounded-lg ${darkMode ? 'bg-indigo-500/20' : 'bg-indigo-100'} flex-shrink-0`}>
-                          <Building className={`w-4 h-4 sm:w-5 sm:h-5 ${darkMode ? 'text-indigo-400' : 'text-indigo-600'}`} />
-                        </div>
-                        <div className="flex-1">
-                          <label className={`block text-xs ${textSecondary} mb-1`}>Department</label>
-                          <p className={`font-semibold ${textPrimary} text-sm sm:text-base`}>{profileData.department || 'Not specified'}</p>
-                        </div>
-                      </div>
-                    </div>
                   </div>
                 </div>
 
@@ -318,6 +356,13 @@ export default function StudentSettingsModal({ darkMode, onClose, studentData })
           </div>
         </div>
       </div>
+      {notification && (
+        <Notification 
+          notification={notification} 
+          onClose={() => setNotification(null)} 
+          darkMode={darkMode} 
+        />
+      )}
     </div>
   );
 }

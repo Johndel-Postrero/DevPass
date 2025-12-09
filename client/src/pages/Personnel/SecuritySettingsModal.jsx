@@ -14,9 +14,12 @@ import {
   Shield,
   MapPin
 } from 'lucide-react';
+import Notification from '../../components/Notification';
+import api from '../../api/axios';
 
-export default function SecuritySettingsModal({ darkMode, onClose, securityData }) {
+export default function SecuritySettingsModal({ darkMode, onClose, securityData, onUpdate }) {
   const [editingProfile, setEditingProfile] = useState(false);
+  const [notification, setNotification] = useState(null);
   
   // Get security ID from various possible properties
   const getSecurityId = () => {
@@ -69,12 +72,44 @@ export default function SecuritySettingsModal({ darkMode, onClose, securityData 
 
   const handleSaveProfile = async () => {
     try {
-      setEditingProfile(false);
-      alert('Profile updated successfully');
-      onClose();
+      // Update profile via API (assuming similar endpoint exists for security)
+      const updateData = {
+        name: profileData.name,
+        phone: profileData.phone || null,
+      };
+      
+      // Note: You may need to create a security profile update endpoint
+      // For now, we'll update local storage similar to student
+      const response = await api.put('/auth/profile', updateData);
+      
+      if (response && response.data) {
+        setEditingProfile(false);
+        setNotification({
+          type: 'success',
+          title: 'Profile Updated',
+          message: 'Your name has been updated successfully.',
+          autoClose: true,
+        });
+        
+        // Call onUpdate callback to update dashboard
+        if (onUpdate && response.data.student) {
+          onUpdate(response.data.student);
+        }
+        
+        // Close modal after a short delay
+        setTimeout(() => {
+          onClose();
+        }, 1500);
+      }
     } catch (error) {
       console.error('Error updating profile:', error);
-      alert('Failed to update profile');
+      const errorMessage = error.response?.data?.message || error.message || 'Failed to update profile';
+      setNotification({
+        type: 'error',
+        title: 'Update Failed',
+        message: errorMessage,
+        autoClose: true,
+      });
     }
   };
 
@@ -309,6 +344,13 @@ export default function SecuritySettingsModal({ darkMode, onClose, securityData 
           </div>
         </div>
       </div>
+      {notification && (
+        <Notification 
+          notification={notification} 
+          onClose={() => setNotification(null)} 
+          darkMode={darkMode} 
+        />
+      )}
     </div>
   );
 }
