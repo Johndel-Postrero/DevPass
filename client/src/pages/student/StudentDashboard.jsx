@@ -7,7 +7,6 @@ import StudentSettingsModal from './StudentSettingsModal';
 import DeviceEditModal from './DeviceEditModal';
 import DeviceRenewModal from './DeviceRenewModal';
 import Loading from '../../components/Loading';
-import LoadingModal from '../../components/LoadingModal';
 import Notification from '../../components/Notification';
 import { motion, AnimatePresence } from 'framer-motion'; // Added Framer Motion
 import { 
@@ -748,7 +747,7 @@ export default function StudentDashboard() {
   const [devices, setDevices] = useState([]);
   const [recentActivity, setRecentActivity] = useState([]);
   const [deviceHistory, setDeviceHistory] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
   const [selectedActivity, setSelectedActivity] = useState(null);
   const [showSettings, setShowSettings] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
@@ -762,15 +761,36 @@ export default function StudentDashboard() {
   const [loadingActivity, setLoadingActivity] = useState(false);
   const [loadingHistory, setLoadingHistory] = useState(false);
   const [previousDeviceStatuses, setPreviousDeviceStatuses] = useState({});
+  // Track device change status for UI indicators (approved/rejected changes)
+  const [deviceChangeStatus, setDeviceChangeStatus] = useState({}); // { deviceId: 'approved' | 'rejected' | null }
   const [shownNotifications, setShownNotifications] = useState(() => {
-    // Initialize from sessionStorage to persist across page refreshes within the same session
+    // Initialize from localStorage to persist across sessions
+    // This prevents showing old notifications when user logs in
     try {
-      const stored = sessionStorage.getItem('shownNotifications');
-      return stored ? new Set(JSON.parse(stored)) : new Set();
+      const stored = localStorage.getItem('shownNotifications');
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        // Clean up old entries (older than 7 days) to prevent localStorage from growing too large
+        const sevenDaysAgo = Date.now() - (7 * 24 * 60 * 60 * 1000);
+        const filtered = parsed.filter(key => {
+          // Extract timestamp from key if it exists (format: deviceId-action-timestamp)
+          const parts = key.split('-');
+          if (parts.length >= 3) {
+            const timestamp = parseInt(parts[parts.length - 1]);
+            return !isNaN(timestamp) && timestamp > sevenDaysAgo;
+          }
+          return true; // Keep keys without timestamp
+        });
+        return new Set(filtered);
+      }
+      return new Set();
     } catch (e) {
       return new Set();
     }
   }); // Track shown notifications
+  
+  // Track if this is the initial load (first time loading devices after login)
+  const [isInitialLoad, setIsInitialLoad] = useState(true);
   
   // Tutorial states
   const [showTutorial, setShowTutorial] = useState(false);
@@ -841,8 +861,9 @@ export default function StudentDashboard() {
       const fetchDevices = async () => {
         try {
           setLoadingDevices(true);
-            const devicesResponse = await api.get('/devices');
-            const userDevices = devicesResponse.data || [];
+            const devicesResponse = await api.get('/devices?per_page=50'); // Request paginated devices
+            // Handle paginated response (new format) or array response (backward compatibility)
+            const userDevices = devicesResponse.data?.data || devicesResponse.data || [];
             setDevices(userDevices);
             
           // Check if tutorial should be shown
@@ -902,26 +923,33 @@ export default function StudentDashboard() {
   }, [activeTab, student]);
 
   // Centralized refresh function to update all relevant data
-  const refreshDashboardData = useCallback(async (refreshAll = false) => {
+  // Optimized to avoid unnecessary profile fetches and only fetch what's needed
+  const refreshDashboardData = useCallback(async (refreshAll = false, includeProfile = false) => {
     try {
       const promises = [];
       
-      // Always refresh student profile data to pick up admin changes
-      promises.push(
-        api.get('/auth/profile')
-          .then(res => {
-            const studentData = res.data?.student || res.data;
-            return { type: 'student', data: studentData };
-          })
-          .catch(err => {
-            console.error('Error refreshing student profile:', err);
-            return { type: 'student', data: null };
-          })
-      );
+      // Only refresh profile if explicitly requested (not on every poll)
+      // Profile changes are rare, so we don't need to check it every time
+      if (includeProfile) {
+        promises.push(
+          api.get('/auth/profile')
+            .then(res => {
+              const studentData = res.data?.student || res.data;
+              return { type: 'student', data: studentData };
+            })
+            .catch(err => {
+              console.error('Error refreshing student profile:', err);
+              return { type: 'student', data: null };
+            })
+        );
+      }
       
       // Refresh data based on active tab or if refreshAll is true
       if (refreshAll || activeTab === 'devices') {
-        promises.push(api.get('/devices').then(res => ({ type: 'devices', data: res.data })));
+        promises.push(api.get('/devices?per_page=50').then(res => ({ 
+          type: 'devices', 
+          data: res.data?.data || res.data || [] // Handle paginated response
+        })));
       }
       if (refreshAll || activeTab === 'activity') {
         promises.push(api.get('/entries/student-activity?limit=10').then(res => ({ type: 'activity', data: res.data })));
@@ -965,24 +993,100 @@ export default function StudentDashboard() {
       });
       
       // Check for device status changes and show notifications
-      if (currentDevices.length > 0) {
+      // Only check for notifications if we have previous state (not on initial load)
+      if (currentDevices.length > 0 && !isInitialLoad) {
         setPreviousDeviceStatuses(prev => {
           const isFirstLoad = Object.keys(prev).length === 0;
           
           currentDevices.forEach(device => {
             const previous = prev[device.id];
             const currentHasPending = device.hasPendingChanges || false;
-            const currentLastAction = device.lastAction || null;
-            const previousLastAction = previous?.lastAction || null;
+            // Handle both camelCase and snake_case from API
+            const currentLastAction = device.lastAction || device.last_action || null;
+            const previousLastAction = previous?.lastAction || previous?.last_action || null;
+            
             const previousHasPending = previous?.hasPendingChanges || false;
             const previousStatus = previous?.status;
+            
+            // Track device change status for UI indicators (approved/rejected changes)
+            // This is separate from notifications - just for visual feedback on the card
+            if (previous) {
+              // Case 1: lastAction changed to changes_approved or reverted
+              if (previousLastAction !== currentLastAction) {
+                if (currentLastAction === 'changes_approved') {
+                  // Changes were approved - show approved indicator
+                  setDeviceChangeStatus(prev => ({ ...prev, [device.id]: 'approved' }));
+                  // Auto-clear after 3 seconds
+                  setTimeout(() => {
+                    setDeviceChangeStatus(prev => {
+                      const updated = { ...prev };
+                      delete updated[device.id];
+                      return updated;
+                    });
+                  }, 3000);
+                } else if (currentLastAction === 'reverted') {
+                  // Changes were rejected - show rejected indicator
+                  setDeviceChangeStatus(prev => ({ ...prev, [device.id]: 'rejected' }));
+                  // Auto-clear after 3 seconds
+                  setTimeout(() => {
+                    setDeviceChangeStatus(prev => {
+                      const updated = { ...prev };
+                      delete updated[device.id];
+                      return updated;
+                    });
+                  }, 3000);
+                }
+              }
+              
+              // Case 2: Device was pending with changes and is now active with reverted/changes_approved
+              // This handles the case where the status transition happens (pending -> active)
+              const wasPendingWithChanges = previousStatus === 'pending' && previousHasPending;
+              const isNowActive = device.status === 'active' && !currentHasPending;
+              
+              if (wasPendingWithChanges && isNowActive) {
+                if (currentLastAction === 'changes_approved') {
+                  // Changes were approved
+                  setDeviceChangeStatus(prev => ({ ...prev, [device.id]: 'approved' }));
+                  setTimeout(() => {
+                    setDeviceChangeStatus(prev => {
+                      const updated = { ...prev };
+                      delete updated[device.id];
+                      return updated;
+                    });
+                  }, 3000);
+                } else if (currentLastAction === 'reverted') {
+                  // Changes were rejected
+                  setDeviceChangeStatus(prev => ({ ...prev, [device.id]: 'rejected' }));
+                  setTimeout(() => {
+                    setDeviceChangeStatus(prev => {
+                      const updated = { ...prev };
+                      delete updated[device.id];
+                      return updated;
+                    });
+                  }, 3000);
+                }
+              }
+            } else if (currentLastAction === 'reverted' && device.status === 'active' && !currentHasPending) {
+              // Case 3: No previous state, but device is active with reverted action (just detected)
+              // This handles the case where we first detect a reverted device
+              setDeviceChangeStatus(prev => ({ ...prev, [device.id]: 'rejected' }));
+              setTimeout(() => {
+                setDeviceChangeStatus(prev => {
+                  const updated = { ...prev };
+                  delete updated[device.id];
+                  return updated;
+                });
+              }, 3000);
+            }
+            
+            // REMOVED: Debug logging for reverted action - notifications disabled
             
             // If device was edited (went from active to pending), clear old notifications for this device
             if (previous && previousStatus === 'active' && device.status === 'pending' && currentHasPending) {
               setShownNotifications(prevNotifs => {
                 const newSet = new Set([...prevNotifs].filter(key => !key.startsWith(`${device.id}-`)));
                 try {
-                  sessionStorage.setItem('shownNotifications', JSON.stringify([...newSet]));
+                  localStorage.setItem('shownNotifications', JSON.stringify([...newSet]));
                 } catch (e) {
                   console.error('Failed to update shownNotifications:', e);
                 }
@@ -1003,44 +1107,102 @@ export default function StudentDashboard() {
             // Check if we should show notification
             let shouldShowNotification = false;
             
-            if (previous) {
+            // Priority check: Handle rejected actions (for new device registrations only, not device changes)
+            // Note: 'reverted' (device changes rejection) and 'changes_approved' notifications are disabled
+            if (!previous && currentLastAction && currentLastAction === 'rejected') {
+              // Check if this is a recent action (within last 5 minutes) to avoid showing old notifications
+              const actionAge = Date.now() - timestamp;
+              const fiveMinutes = 5 * 60 * 1000;
+              if (actionAge < fiveMinutes) {
+                shouldShowNotification = true;
+              }
+            }
+            
+            // Normal notification logic (for other actions or if priority check didn't trigger)
+            if (!shouldShowNotification && previous) {
               // Case 1: Device was pending (with changes) and is now active (approved/rejected)
               const wasPendingWithChanges = previousStatus === 'pending' && previousHasPending;
               const isNowActive = device.status === 'active' && !currentHasPending;
               const statusChangedToActive = wasPendingWithChanges && isNowActive;
+              
+              // Note: Device change rejections (reverted) notifications are disabled
+              // Only handle new device registration rejections
+              const wasPendingAndReverted = false; // Disabled - no notifications for device changes rejection
+              
+              // Case 1b: Device was pending and is now rejected (new device rejection)
+              const wasPending = previousStatus === 'pending';
+              const isNowRejected = device.status === 'rejected';
+              const statusChangedToRejected = wasPending && isNowRejected;
               
               // Case 2: Device is active and lastAction changed (NEW action)
               const lastActionChanged = previousLastAction !== currentLastAction;
               const lastActionNowSet = currentLastAction !== null;
               const isActiveWithNewAction = device.status === 'active' && lastActionNowSet;
               
+              // Case 2b: Device is rejected and lastAction changed (NEW rejection action)
+              const isRejectedWithNewAction = device.status === 'rejected' && lastActionNowSet && currentLastAction === 'rejected';
+              
               // Case 3: Same lastAction but different timestamp (new approval/rejection cycle)
+              // This is important for reverted/rejected actions that might have the same action but new timestamp
               const sameActionButNewTimestamp = previousLastAction === currentLastAction && 
                                                 previousLastAction !== null && 
+                                                previousTimestamp !== null &&
                                                 timestamp !== previousTimestamp;
+              
+              // Case 4: Device is rejected with same action but timestamp changed (new rejection cycle)
+              // Note: Only for new device registration rejections, not device changes (reverted)
+              const isRejectedWithNewTimestamp = currentLastAction === 'rejected' &&
+                                                  previousLastAction === currentLastAction &&
+                                                  previousTimestamp !== null &&
+                                                  timestamp !== previousTimestamp &&
+                                                  timestamp > previousTimestamp; // Only if new timestamp is more recent
               
               // Show notification if:
               // 1. Status changed from pending (with changes) to active (this means it was just approved/rejected), OR
+              // 1b. Status changed from pending to rejected (new device rejection), OR
               // 2. Device is active and lastAction changed (new action), OR
+              // 2b. Device is rejected and lastAction changed to 'rejected' (new rejection), OR
               // 3. Same action but different timestamp (new approval/rejection cycle)
+              // Note: Device change rejections (reverted) notifications are disabled
+              const isRevertedWithNewAction = false; // Disabled - no notifications for device changes rejection
+              
               shouldShowNotification = (statusChangedToActive || 
+                  statusChangedToRejected ||
+                  wasPendingAndReverted ||
                   (lastActionChanged && isActiveWithNewAction) ||
-                  sameActionButNewTimestamp) && 
+                  (lastActionChanged && isRejectedWithNewAction) ||
+                  (lastActionChanged && isRevertedWithNewAction) ||
+                  sameActionButNewTimestamp ||
+                  isRejectedWithNewTimestamp) && 
                   currentLastAction !== null;
               
-              // IMPORTANT: Also check if this notification key is different from the previous one
-              if (shouldShowNotification && notificationKey === previousNotificationKey) {
+            }
+            
+            // REMOVED: Handle cases for reverted/rejected - notifications disabled
+            
+            // IMPORTANT: Also check if this notification key is different from the previous one
+            // BUT: Don't block if it's a reverted/rejected action (we handle those above)
+            // REMOVED: Blocking for reverted/rejected actions - let localStorage handle duplicates
+            if (shouldShowNotification && notificationKey === previousNotificationKey && 
+                currentLastAction !== 'reverted' && currentLastAction !== 'rejected') {
+              shouldShowNotification = false;
+            }
+            
+            // Additional check: Only show if the change happened recently (within last 24 hours)
+            // BUT: Skip this check for reverted/rejected actions since we already checked in priority check
+            // REMOVED: Time-based blocking for reverted/rejected actions
+            if (shouldShowNotification && approvedAt && 
+                currentLastAction !== 'reverted' && currentLastAction !== 'rejected') {
+              const changeAge = Date.now() - timestamp;
+              const twentyFourHours = 24 * 60 * 60 * 1000;
+              if (changeAge > twentyFourHours) {
                 shouldShowNotification = false;
               }
-            } else if (isFirstLoad && currentLastAction) {
-              // No previous state - this is first time seeing this device
-              // Only show notification if device is NOT pending (i.e., already processed)
-              const isNewRegistration = device.status === 'pending' && !device.hasPendingChanges;
-              const isProcessedDevice = device.status === 'active' || device.status === 'rejected';
-              
-              // Show notification only for processed devices, not new registrations
-              shouldShowNotification = !isNewRegistration && isProcessedDevice;
             }
+            
+            // REMOVED: Debug logging for reverted/rejected notifications - notifications disabled
+            // REMOVED: The else if (isFirstLoad) block that was showing notifications on login
+            // We only want to show notifications when there's an actual change from previous state
             
             // Check if notification should be shown using functional update
             if (shouldShowNotification && notificationKey) {
@@ -1051,43 +1213,21 @@ export default function StudentDashboard() {
                   // Mark as shown IMMEDIATELY to prevent duplicate notifications
                   const newSet = new Set([...prevNotifs, notificationKey]);
                   try {
-                    sessionStorage.setItem('shownNotifications', JSON.stringify([...newSet]));
+                    localStorage.setItem('shownNotifications', JSON.stringify([...newSet]));
                   } catch (e) {
-                    console.error('Failed to save shownNotifications to sessionStorage:', e);
+                    console.error('Failed to save shownNotifications to localStorage:', e);
                   }
                   
                   // Check lastAction to determine if approved or rejected
+                  // Note: Notifications for device changes (changes_approved, reverted) are disabled
+                  // Only show notifications for new device registrations
                   let notificationData = null;
-                  if (currentLastAction === 'reverted') {
-                    // Changes were rejected and reverted
-                    notificationData = {
-                      type: 'error',
-                      title: 'Changes Rejected',
-                      message: `Your changes to ${device.brand} ${device.model} have been rejected. The device has been restored to its original values.`,
-                      autoClose: true,
-                    };
-                  } else if (currentLastAction === 'changes_approved') {
-                    // Changes to an active device were approved
-                    notificationData = {
-                      type: 'success',
-                      title: 'Changes Approved!',
-                      message: `Your changes to ${device.brand} ${device.model} have been approved by the admin.`,
-                      autoClose: true,
-                    };
-                  } else if (currentLastAction === 'approved') {
+                  if (currentLastAction === 'approved') {
                     // New device registration was approved
                     notificationData = {
                       type: 'success',
                       title: 'Device Approved!',
                       message: `Your device ${device.brand} ${device.model} has been approved by the admin.`,
-                      autoClose: true,
-                    };
-                  } else if (currentLastAction === 'rejected') {
-                    // New device registration was rejected
-                    notificationData = {
-                      type: 'error',
-                      title: 'Device Rejected',
-                      message: `Your device registration for ${device.brand} ${device.model} has been rejected.`,
                       autoClose: true,
                     };
                   } else if (currentLastAction === 'renewed') {
@@ -1106,6 +1246,14 @@ export default function StudentDashboard() {
                       message: `Your QR code renewal request for ${device.brand} ${device.model} has been rejected.`,
                       autoClose: true,
                     };
+                  } else if (currentLastAction === 'rejected') {
+                    // New device registration was rejected
+                    notificationData = {
+                      type: 'error',
+                      title: 'Device Registration Rejected',
+                      message: `Your device registration for ${device.brand} ${device.model} has been rejected by the admin.`,
+                      autoClose: true,
+                    };
                   }
                   
                   if (notificationData) {
@@ -1116,6 +1264,8 @@ export default function StudentDashboard() {
                   }
                   
                   return newSet;
+                } else {
+                  // Notification already shown
                 }
                 
                 return prevNotifs;
@@ -1134,33 +1284,114 @@ export default function StudentDashboard() {
               updatedAt: device.updatedAt
             };
           });
+          
+          // Mark initial load as complete after first device check
+          if (isInitialLoad && Object.keys(updated).length > 0) {
+            setIsInitialLoad(false);
+          }
+          
           return updated;
         });
+        } else if (currentDevices.length > 0 && isInitialLoad) {
+          // On initial load, just populate previousDeviceStatuses without checking notifications
+          setPreviousDeviceStatuses(prev => {
+            const updated = { ...prev };
+            currentDevices.forEach(device => {
+              updated[device.id] = {
+                status: device.status,
+                lastAction: device.lastAction,
+                hasPendingChanges: device.hasPendingChanges,
+                approvedAt: device.approvedAt || device.approved_at,
+                updatedAt: device.updatedAt
+              };
+            });
+            setIsInitialLoad(false);
+            return updated;
+          });
         }
       } catch (error) {
       console.error('Error refreshing dashboard data:', error);
     }
-  }, [activeTab, devices, shownNotifications]);
+  }, [activeTab, devices, shownNotifications, isInitialLoad]);
 
-  // Poll for changes periodically (every 3 seconds) to detect admin actions
+  // Poll for changes periodically (every 5 seconds) to detect admin actions
+  // Optimized to only fetch devices (for notifications) instead of all data
   useEffect(() => {
     if (!student) return;
 
+    let isPolling = false;
+    let abortController = null;
+
     const pollForChanges = async () => {
+      // Skip if already polling or tab is hidden
+      if (isPolling || document.hidden) return;
+      
+      isPolling = true;
+      abortController = new AbortController();
+
       try {
-        // Always check devices for notifications, even if on a different tab
-        // This ensures we catch admin approvals/rejections regardless of active tab
-        await refreshDashboardData(true);
+        // Only fetch devices for notifications (not all tabs data)
+        // This reduces server load significantly
+        const devicesResponse = await api.get('/devices?per_page=50', {
+          signal: abortController.signal
+        });
+        const userDevices = devicesResponse.data?.data || devicesResponse.data || [];
+        
+        // Only update if devices changed (to avoid unnecessary re-renders)
+        if (JSON.stringify(userDevices.map(d => ({ id: d.id, status: d.status, lastAction: d.lastAction }))) 
+            !== JSON.stringify(devices.map(d => ({ id: d.id, status: d.status, lastAction: d.lastAction })))) {
+          // Update devices and check for notifications
+          setDevices(userDevices);
+          
+          // Check for notification changes (simplified version)
+          const updated = {};
+          userDevices.forEach(device => {
+            const previous = previousDeviceStatuses[device.id];
+            if (previous) {
+              const currentLastAction = device.lastAction || device.last_action;
+              const previousLastAction = previous.lastAction;
+              
+              if (currentLastAction !== previousLastAction || device.status !== previous.status) {
+                updated[device.id] = {
+                  status: device.status,
+                  lastAction: currentLastAction,
+                  hasPendingChanges: device.hasPendingChanges,
+                  approvedAt: device.approvedAt || device.approved_at,
+                  updatedAt: device.updatedAt
+                };
+              }
+            }
+          });
+          
+          if (Object.keys(updated).length > 0) {
+            setPreviousDeviceStatuses(prev => ({ ...prev, ...updated }));
+          }
+        }
       } catch (error) {
-        console.error('Error polling for changes:', error);
+        // Ignore abort errors
+        if (error.name !== 'AbortError' && error.name !== 'CanceledError') {
+          console.error('Error polling for changes:', error);
+        }
+      } finally {
+        isPolling = false;
+        abortController = null;
       }
     };
 
-    // Poll every 3 seconds
-    const interval = setInterval(pollForChanges, 3000);
+    // Poll every 5 seconds (reduced from 3s to reduce server load)
+    const interval = setInterval(pollForChanges, 5000);
 
-    return () => clearInterval(interval);
-  }, [student, refreshDashboardData]);
+    // Initial poll after a short delay
+    const initialTimeout = setTimeout(pollForChanges, 2000);
+
+    return () => {
+      clearInterval(interval);
+      clearTimeout(initialTimeout);
+      if (abortController) {
+        abortController.abort();
+      }
+    };
+  }, [student, devices, previousDeviceStatuses]);
 
   // Handlers for device actions
   const handleEditDevice = (device) => {
@@ -1169,8 +1400,8 @@ export default function StudentDashboard() {
   };
 
   const handleEditSuccess = async () => {
-    // Refresh all data after successful edit
-    await refreshDashboardData(true);
+    // Refresh all data after successful edit (skip profile to reduce load)
+    await refreshDashboardData(true, false);
   };
 
   const handleDeleteDevice = (device) => {
@@ -1195,8 +1426,8 @@ export default function StudentDashboard() {
       setShowDeleteModal(false);
       setDeviceToDelete(null);
       
-      // Refresh all data after successful delete
-      await refreshDashboardData(true);
+      // Refresh all data after successful delete (skip profile to reduce load)
+      await refreshDashboardData(true, false);
     } catch (error) {
       console.error('Error deleting device:', error);
       const errorMessage = error.response?.data?.message || 'Failed to delete device';
@@ -1215,8 +1446,8 @@ export default function StudentDashboard() {
   };
 
   const handleRenewSuccess = async () => {
-    // Refresh all data after successful renewal
-    await refreshDashboardData(true);
+    // Refresh all data after successful renewal (skip profile to reduce load)
+    await refreshDashboardData(true, false);
   };
 
   // Add this helper function to calculate if renew button should be disabled
@@ -1355,12 +1586,6 @@ export default function StudentDashboard() {
     </button>
   );
 
-  // Debug: Log notification state
-  useEffect(() => {
-    if (notification) {
-      console.log('🔔 Notification state changed:', notification);
-    }
-  }, [notification]);
 
   return (
     <div className={`min-h-screen ${bgClass} transition-colors duration-500`}>
@@ -1369,7 +1594,6 @@ export default function StudentDashboard() {
         <Notification
           notification={notification}
           onClose={() => {
-            console.log('🔔 Closing notification');
             // Notification key is already saved in shownNotifications when notification was triggered
             // Just clear the notification state - it won't show again because the key is already marked as shown
             setNotification(null);
@@ -1590,9 +1814,12 @@ export default function StudentDashboard() {
         {/* Content */}
         {activeTab === 'devices' ? (
           <div>
-            {loadingDevices && <LoadingModal darkMode={darkMode} message="Loading devices..." />}
             {/* Devices List */}
-            {!loadingDevices && devices.length === 0 ? (
+            {loadingDevices ? (
+              <div className="text-center py-8">
+                <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500 mx-auto"></div>
+              </div>
+            ) : !loadingDevices && devices.length === 0 ? (
               <div className={`${cardBg} rounded-xl sm:rounded-2xl p-8 sm:p-12 text-center`}>
                 <Laptop className={`w-16 h-16 mx-auto mb-4 ${textMuted}`} />
                 <h3 className={`text-lg sm:text-xl font-bold ${textPrimary} mb-2`}>No devices registered</h3>
@@ -1778,22 +2005,52 @@ export default function StudentDashboard() {
                             
                           </div>
                           
-                          {/* Pending Changes Message */}
-                          {hasPendingChanges && (
+                          {/* Device Changes Status Indicator */}
+                          {hasPendingChanges && !deviceChangeStatus[device.id] && (
                             <div className={`mt-3 sm:mt-4 p-3 sm:p-4 rounded-lg ${darkMode ? 'bg-yellow-500/10 border border-yellow-500/30' : 'bg-yellow-50 border border-yellow-200'}`}>
-                              <div className="flex items-start gap-2 sm:gap-3">
-                                <Clock className={`w-4 h-4 sm:w-5 sm:h-5 flex-shrink-0 mt-0.5 ${darkMode ? 'text-yellow-400' : 'text-yellow-600'}`} />
-                                <div>
-                                  <p className={`text-xs sm:text-sm font-semibold ${darkMode ? 'text-yellow-300' : 'text-yellow-800'} mb-1`}>
-                                    Waiting for Admin Approval
-                                  </p>
-                                  <p className={`text-xs ${darkMode ? 'text-yellow-400/80' : 'text-yellow-700'}`}>
-                                    Your device changes are pending admin approval. The device will be reactivated once approved.
-                                  </p>
-                            </div>
+                              <div className="flex items-center gap-2 sm:gap-3">
+                                <Clock className={`w-4 h-4 sm:w-5 sm:h-5 flex-shrink-0 ${darkMode ? 'text-yellow-400' : 'text-yellow-600'}`} />
+                                <p className={`text-xs sm:text-sm font-semibold ${darkMode ? 'text-yellow-300' : 'text-yellow-800'}`}>
+                                  Waiting
+                                </p>
                               </div>
                             </div>
                           )}
+                          
+                          {/* Approved Changes Indicator */}
+                          {deviceChangeStatus[device.id] === 'approved' && (
+                            <motion.div
+                              initial={{ opacity: 0, y: -10 }}
+                              animate={{ opacity: 1, y: 0 }}
+                              exit={{ opacity: 0, y: -10 }}
+                              className={`mt-3 sm:mt-4 p-3 sm:p-4 rounded-lg ${darkMode ? 'bg-emerald-500/10 border border-emerald-500/30' : 'bg-emerald-50 border border-emerald-200'}`}
+                            >
+                              <div className="flex items-center gap-2 sm:gap-3">
+                                <CheckCircle className={`w-4 h-4 sm:w-5 sm:h-5 flex-shrink-0 ${darkMode ? 'text-emerald-400' : 'text-emerald-600'}`} />
+                                <p className={`text-xs sm:text-sm font-semibold ${darkMode ? 'text-emerald-300' : 'text-emerald-800'}`}>
+                                  Approved Changes
+                                </p>
+                              </div>
+                            </motion.div>
+                          )}
+                          
+                          {/* Rejected Changes Indicator */}
+                          {deviceChangeStatus[device.id] === 'rejected' && (
+                            <motion.div
+                              initial={{ opacity: 0, y: -10 }}
+                              animate={{ opacity: 1, y: 0 }}
+                              exit={{ opacity: 0, y: -10 }}
+                              className={`mt-3 sm:mt-4 p-3 sm:p-4 rounded-lg ${darkMode ? 'bg-red-500/10 border border-red-500/30' : 'bg-red-50 border border-red-200'}`}
+                            >
+                              <div className="flex items-center gap-2 sm:gap-3">
+                                <XCircle className={`w-4 h-4 sm:w-5 sm:h-5 flex-shrink-0 ${darkMode ? 'text-red-400' : 'text-red-600'}`} />
+                                <p className={`text-xs sm:text-sm font-semibold ${darkMode ? 'text-red-300' : 'text-red-800'}`}>
+                                  Rejected Changes
+                                </p>
+                              </div>
+                            </motion.div>
+                          )}
+                          
                             </div>
                           );
                         }) : null}
@@ -1921,21 +2178,50 @@ export default function StudentDashboard() {
                      
                         </div>
                         
-                        {/* Pending Changes Message */}
-                        {hasPendingChanges && (
+                        {/* Device Changes Status Indicator */}
+                        {hasPendingChanges && !deviceChangeStatus[device.id] && (
                           <div className={`mt-3 sm:mt-4 p-3 sm:p-4 rounded-lg ${darkMode ? 'bg-yellow-500/10 border border-yellow-500/30' : 'bg-yellow-50 border border-yellow-200'}`}>
-                            <div className="flex items-start gap-2 sm:gap-3">
-                              <Clock className={`w-4 h-4 sm:w-5 sm:h-5 flex-shrink-0 mt-0.5 ${darkMode ? 'text-yellow-400' : 'text-yellow-600'}`} />
-                              <div>
-                                <p className={`text-xs sm:text-sm font-semibold ${darkMode ? 'text-yellow-300' : 'text-yellow-800'} mb-1`}>
-                                  Waiting for Admin Approval
-                                </p>
-                                <p className={`text-xs ${darkMode ? 'text-yellow-400/80' : 'text-yellow-700'}`}>
-                                  Your device changes are pending admin approval. The device will be reactivated once approved.
-                                </p>
-                          </div>
+                            <div className="flex items-center gap-2 sm:gap-3">
+                              <Clock className={`w-4 h-4 sm:w-5 sm:h-5 flex-shrink-0 ${darkMode ? 'text-yellow-400' : 'text-yellow-600'}`} />
+                              <p className={`text-xs sm:text-sm font-semibold ${darkMode ? 'text-yellow-300' : 'text-yellow-800'}`}>
+                                Waiting
+                              </p>
                             </div>
                           </div>
+                        )}
+                        
+                        {/* Approved Changes Indicator */}
+                        {deviceChangeStatus[device.id] === 'approved' && (
+                          <motion.div
+                            initial={{ opacity: 0, y: -10 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            exit={{ opacity: 0, y: -10 }}
+                            className={`mt-3 sm:mt-4 p-3 sm:p-4 rounded-lg ${darkMode ? 'bg-emerald-500/10 border border-emerald-500/30' : 'bg-emerald-50 border border-emerald-200'}`}
+                          >
+                            <div className="flex items-center gap-2 sm:gap-3">
+                              <CheckCircle className={`w-4 h-4 sm:w-5 sm:h-5 flex-shrink-0 ${darkMode ? 'text-emerald-400' : 'text-emerald-600'}`} />
+                              <p className={`text-xs sm:text-sm font-semibold ${darkMode ? 'text-emerald-300' : 'text-emerald-800'}`}>
+                                Approved Changes
+                              </p>
+                            </div>
+                          </motion.div>
+                        )}
+                        
+                        {/* Rejected Changes Indicator */}
+                        {deviceChangeStatus[device.id] === 'rejected' && (
+                          <motion.div
+                            initial={{ opacity: 0, y: -10 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            exit={{ opacity: 0, y: -10 }}
+                            className={`mt-3 sm:mt-4 p-3 sm:p-4 rounded-lg ${darkMode ? 'bg-red-500/10 border border-red-500/30' : 'bg-red-50 border border-red-200'}`}
+                          >
+                            <div className="flex items-center gap-2 sm:gap-3">
+                              <XCircle className={`w-4 h-4 sm:w-5 sm:h-5 flex-shrink-0 ${darkMode ? 'text-red-400' : 'text-red-600'}`} />
+                              <p className={`text-xs sm:text-sm font-semibold ${darkMode ? 'text-red-300' : 'text-red-800'}`}>
+                                Rejected Changes
+                              </p>
+                            </div>
+                          </motion.div>
                         )}
                           </div>
                         );
@@ -1986,9 +2272,12 @@ export default function StudentDashboard() {
         {/* Recent Activity Tab */}
         {activeTab === 'activity' && (
           <div className={`${cardBg} rounded-xl sm:rounded-2xl p-4 sm:p-6`}>
-            {loadingActivity && <LoadingModal darkMode={darkMode} message="Loading activity..." />}
             <h3 className={`text-lg sm:text-xl font-bold ${textPrimary} mb-4 sm:mb-6`}>Entry History</h3>
-            {recentActivity.length === 0 ? (
+            {loadingActivity ? (
+              <div className="text-center py-8">
+                <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500 mx-auto"></div>
+              </div>
+            ) : recentActivity.length === 0 ? (
               <div className="text-center py-8">
                 <AlertCircle className={`w-12 h-12 mx-auto mb-4 ${textMuted}`} />
                 <p className={`${textSecondary}`}>No recent activity</p>
@@ -2046,12 +2335,15 @@ export default function StudentDashboard() {
         {/* Device History Tab */}
         {activeTab === 'history' && (
           <div className={`${cardBg} rounded-xl sm:rounded-2xl p-4 sm:p-6`}>
-            {loadingHistory && <LoadingModal darkMode={darkMode} message="Loading history..." />}
             <h3 className={`text-lg sm:text-xl font-bold ${textPrimary} mb-4 sm:mb-6 flex items-center gap-2`}>
               <Clock className="w-5 h-5" />
               Device History
             </h3>
-            {!loadingHistory && deviceHistory.length === 0 ? (
+            {loadingHistory ? (
+              <div className="text-center py-8">
+                <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500 mx-auto"></div>
+              </div>
+            ) : !loadingHistory && deviceHistory.length === 0 ? (
               <div className="text-center py-8">
                 <AlertCircle className={`w-12 h-12 mx-auto mb-4 ${textMuted}`} />
                 <p className={`${textSecondary}`}>No device history available</p>
@@ -2153,8 +2445,8 @@ export default function StudentDashboard() {
           darkMode={darkMode} 
           onClose={() => setShowRegister(false)}
           onSuccess={async () => {
-            // Refresh all data after successful registration
-            await refreshDashboardData(true);
+            // Refresh all data after successful registration (include profile for new user)
+            await refreshDashboardData(true, true);
           }}
         />
       )}

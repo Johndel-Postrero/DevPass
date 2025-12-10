@@ -15,7 +15,8 @@ return new class extends Migration
             Schema::create('gates', function (Blueprint $table) {
                 $table->id('gate_id');
                 $table->string('gate_name', 50);
-                $table->string('location', 100)->nullable();
+                $table->string('location', 100);
+                $table->boolean('is_active')->default(true); // Per database diagram
                 $table->timestamps();
             });
         }

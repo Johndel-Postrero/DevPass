@@ -239,32 +239,62 @@ export default function AdminDashboard() {
     active: 0,
     scansToday: 0
   });
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
   const [selectedScan, setSelectedScan] = useState(null);
   const [showSettings, setShowSettings] = useState(false);
   const [admin, setAdmin] = useState(null); // Admin user data
   // Refresh data function (used for both initial load and auto-refresh)
-  const refreshData = async (showLoading = false) => {
+  // Optimized with request cancellation support
+  const refreshData = async (showLoading = false, signal = null) => {
     try {
       if (showLoading) {
         setLoading(true);
       }
       const status = activeTab === 'all' ? 'all' : activeTab;
-      const [devicesRes, statsRes, scansRes] = await Promise.all([
-        api.get(`/devices?status=${status}`),
-        api.get('/devices/stats'),
-        api.get('/entries?limit=10')
+      
+      // Add timeout to prevent hanging requests
+      const timeoutPromise = new Promise((_, reject) => 
+        setTimeout(() => reject(new Error('Request timeout')), 20000) // Reduced from 25s to 20s
+      );
+      
+      // Create abort controller if not provided
+      const abortController = signal || new AbortController();
+      
+      const [devicesRes, statsRes, scansRes] = await Promise.race([
+        Promise.all([
+          api.get(`/devices?status=${status}&per_page=50`, { signal: abortController.signal }), // Request 50 devices per page for performance
+          api.get('/devices/stats', { signal: abortController.signal }),
+          api.get('/entries?limit=10', { signal: abortController.signal })
+        ]),
+        timeoutPromise
       ]);
-      setDevices(devicesRes.data);
+      
+      // Handle paginated response (new format) or array response (backward compatibility)
+      const devicesData = devicesRes.data?.data || devicesRes.data || [];
+      setDevices(devicesData);
       setStats({
         ...statsRes.data,
-        scansToday: scansRes.data.length
+        scansToday: scansRes.data?.length || 0
       });
-      setRecentScans(scansRes.data);
+      setRecentScans(scansRes.data || []);
     } catch (error) {
+      // Ignore abort errors (request was cancelled)
+      if (error.name === 'AbortError' || error.name === 'CanceledError') {
+        return;
+      }
+      
       console.error('Error refreshing data:', error);
       if (error.response?.status === 401) {
         navigate('/');
+      } else if (error.message === 'Request timeout') {
+        console.error('Request timed out - server may be slow');
+        // Don't show error to user for auto-refresh, only for initial load
+        if (showLoading) {
+          // Set empty data to prevent infinite loading
+          setDevices([]);
+          setStats({ total: 0, pending: 0, active: 0, scansToday: 0 });
+          setRecentScans([]);
+        }
       }
     } finally {
       if (showLoading) {
@@ -303,14 +333,56 @@ export default function AdminDashboard() {
     refreshData(true);
   }, [activeTab, navigate]);
 
-  // Auto-refresh data every 3 seconds
+  // Auto-refresh data every 15 seconds (optimized to reduce server load)
+  // Pauses when tab is hidden to save resources
   useEffect(() => {
-    const interval = setInterval(() => {
-      refreshData(false); // Don't show loading spinner for auto-refresh
-    }, 3000);
+    // Only auto-refresh if not currently loading
+    let isRefreshing = false;
+    let abortController = null;
+    
+    const refreshIfVisible = () => {
+      // Skip if tab is hidden or already refreshing
+      if (document.hidden || isRefreshing || loading) return;
+      
+      isRefreshing = true;
+      abortController = new AbortController();
+      
+      refreshData(false, abortController.signal)
+        .catch(error => {
+          // Ignore abort errors
+          if (error.name !== 'AbortError' && error.name !== 'CanceledError') {
+            console.error('Error refreshing data:', error);
+          }
+        })
+        .finally(() => {
+          isRefreshing = false;
+          abortController = null;
+        });
+    };
+    
+    const interval = setInterval(refreshIfVisible, 15000); // Increased from 10s to 15s
 
-    return () => clearInterval(interval);
-  }, [activeTab]);
+    // Listen for visibility changes to pause/resume polling
+    const handleVisibilityChange = () => {
+      if (!document.hidden && !isRefreshing && !loading) {
+        // Refresh immediately when tab becomes visible
+        refreshIfVisible();
+      } else if (document.hidden && abortController) {
+        // Cancel in-flight requests when tab is hidden
+        abortController.abort();
+      }
+    };
+    
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    return () => {
+      clearInterval(interval);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      if (abortController) {
+        abortController.abort();
+      }
+    };
+  }, [activeTab, loading]);
 
   const bgClass = darkMode 
     ? 'bg-black text-white' 
@@ -334,31 +406,37 @@ export default function AdminDashboard() {
 
   const handleApprove = async (deviceId) => {
     try {
+      setLoading(true);
       const response = await api.post(`/devices/${deviceId}/approve`);
       if (response.data.message) {
         // Show success message (you can replace with a toast notification)
         console.log('Device approved successfully');
       }
-      await refreshData();
+      await refreshData(true);
     } catch (error) {
       console.error('Error approving device:', error);
-      const errorMessage = error.response?.data?.message || 'Failed to approve device';
+      const errorMessage = error.response?.data?.message || error.message || 'Failed to approve device';
       alert(errorMessage);
+    } finally {
+      setLoading(false);
     }
   };
 
   const handleReject = async (deviceId) => {
     try {
+      setLoading(true);
       const response = await api.post(`/devices/${deviceId}/reject`);
       if (response.data.message) {
         // Show success message (you can replace with a toast notification)
         console.log('Device rejected successfully');
       }
-      await refreshData();
+      await refreshData(true);
     } catch (error) {
       console.error('Error rejecting device:', error);
-      const errorMessage = error.response?.data?.message || 'Failed to reject device';
+      const errorMessage = error.response?.data?.message || error.message || 'Failed to reject device';
       alert(errorMessage);
+    } finally {
+      setLoading(false);
     }
   };
 

@@ -12,7 +12,9 @@ import {
   Calendar,
   CheckCircle,
   Shield,
-  MapPin
+  MapPin,
+  Eye,
+  EyeOff
 } from 'lucide-react';
 import Notification from '../../components/Notification';
 import api from '../../api/axios';
@@ -20,6 +22,11 @@ import api from '../../api/axios';
 export default function SecuritySettingsModal({ darkMode, onClose, securityData, onUpdate }) {
   const [editingProfile, setEditingProfile] = useState(false);
   const [notification, setNotification] = useState(null);
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [errors, setErrors] = useState({});
   
   // Get security ID from various possible properties
   const getSecurityId = () => {
@@ -71,6 +78,22 @@ export default function SecuritySettingsModal({ darkMode, onClose, securityData,
     : 'bg-white/60 border-gray-300 focus:border-blue-500';
 
   const handleSaveProfile = async () => {
+    // Validate password if provided
+    const newErrors = {};
+    if (password || confirmPassword) {
+      if (!password || password.trim().length < 6) {
+        newErrors.password = 'Password must be at least 6 characters';
+      }
+      if (password !== confirmPassword) {
+        newErrors.confirmPassword = 'Passwords do not match';
+      }
+    }
+    
+    if (Object.keys(newErrors).length > 0) {
+      setErrors(newErrors);
+      return;
+    }
+    
     try {
       // Update profile via API (assuming similar endpoint exists for security)
       const updateData = {
@@ -78,16 +101,24 @@ export default function SecuritySettingsModal({ darkMode, onClose, securityData,
         phone: profileData.phone || null,
       };
       
+      // Only include password if it's provided
+      if (password && password.trim()) {
+        updateData.password = password;
+      }
+      
       // Note: You may need to create a security profile update endpoint
       // For now, we'll update local storage similar to student
       const response = await api.put('/auth/profile', updateData);
       
       if (response && response.data) {
         setEditingProfile(false);
+        setPassword('');
+        setConfirmPassword('');
+        setErrors({});
         setNotification({
           type: 'success',
           title: 'Profile Updated',
-          message: 'Your name has been updated successfully.',
+          message: password ? 'Your profile and password have been updated successfully.' : 'Your profile has been updated successfully.',
           autoClose: true,
         });
         
@@ -115,7 +146,7 @@ export default function SecuritySettingsModal({ darkMode, onClose, securityData,
 
   return (
     <div className={`fixed inset-0 ${bgClass} z-50 flex items-center justify-center p-3 sm:p-4`}>
-      <div className={`${cardBg} rounded-xl sm:rounded-2xl w-full max-w-md sm:max-w-lg md:max-w-2xl h-auto max-h-[85vh] flex flex-col relative z-10`}>
+      <div className={`${cardBg} rounded-xl sm:rounded-2xl w-full max-w-md sm:max-w-lg md:max-w-2xl max-h-[90vh] flex flex-col relative z-10`}>
         {/* Header */}
         <div className="border-b border-white/10 p-4 sm:p-6 flex items-center justify-between flex-shrink-0">
           <div className="flex items-center gap-2 sm:gap-3">
@@ -135,9 +166,9 @@ export default function SecuritySettingsModal({ darkMode, onClose, securityData,
           </button>
         </div>
 
-        {/* Content - No scrolling */}
-        <div className="flex-1 p-4 sm:p-6 overflow-hidden">
-          <div className="h-full flex flex-col">
+        {/* Content - Scrollable */}
+        <div className="flex-1 p-4 sm:p-6 overflow-y-auto">
+          <div className="flex flex-col">
             {/* Profile Header */}
             <div className={`${darkMode ? 'bg-white/5' : 'bg-gray-50'} rounded-xl sm:rounded-2xl p-4 sm:p-6 mb-4 sm:mb-6`}>
               <div className="flex flex-col sm:flex-row items-center gap-4 sm:gap-6">
@@ -214,15 +245,15 @@ export default function SecuritySettingsModal({ darkMode, onClose, securityData,
             </div>
 
             {/* Personal Information Grid */}
-            <div className={`${darkMode ? 'bg-white/5' : 'bg-gray-50'} rounded-xl sm:rounded-2xl p-4 sm:p-6 flex-1`}>
-              <div className="h-full">
+            <div className={`${darkMode ? 'bg-white/5' : 'bg-gray-50'} rounded-xl sm:rounded-2xl p-4 sm:p-6`}>
+              <div>
                 <h4 className={`text-base sm:text-lg font-bold ${textPrimary} flex items-center gap-2 mb-4 sm:mb-6`}>
                   <User className="w-4 h-4 sm:w-5 sm:h-5" />
                   Personal Information
                 </h4>
                 
                 {/* 2-Column Grid for the 4 fields */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 sm:gap-6 h-full">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 sm:gap-6">
                   {/* Left Column */}
                   <div className="space-y-4 sm:space-y-6">
                     {/* Employee ID - Highlighted */}
@@ -292,55 +323,127 @@ export default function SecuritySettingsModal({ darkMode, onClose, securityData,
                       </div>
                     </div>
                   </div>
+                </div>
 
-      
+                {/* Password Change Section - Always visible */}
+                <div className="mt-6 sm:mt-8">
+                  <h4 className={`text-base sm:text-lg font-bold ${textPrimary} flex items-center gap-2 mb-4 sm:mb-6`}>
+                    <Key className="w-4 h-4 sm:w-5 sm:h-5" />
+                    Change Password
+                  </h4>
+                  <div className="space-y-4">
+                    <div>
+                      <label className={`block text-sm font-semibold ${textPrimary} mb-2`}>
+                        New Password
+                      </label>
+                      <div className="relative">
+                        <input
+                          type={showPassword ? "text" : "password"}
+                          value={password}
+                          onChange={(e) => {
+                            setPassword(e.target.value);
+                            if (errors.password) setErrors({...errors, password: ''});
+                          }}
+                          className={`w-full px-4 py-3 pr-12 rounded-lg border ${inputBg} ${textPrimary} focus:outline-none focus:ring-2 focus:ring-blue-500 ${errors.password ? 'border-red-500' : ''}`}
+                          placeholder="Enter new password (leave blank to keep current)"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setShowPassword(!showPassword)}
+                          className={`absolute right-3 top-1/2 -translate-y-1/2 p-1 rounded-lg transition-all ${darkMode ? 'hover:bg-white/10 text-gray-400' : 'hover:bg-gray-100 text-gray-600'}`}
+                        >
+                          {showPassword ? (
+                            <EyeOff className="w-5 h-5" />
+                          ) : (
+                            <Eye className="w-5 h-5" />
+                          )}
+                        </button>
+                      </div>
+                      {errors.password && <p className="text-red-500 text-xs mt-1">{errors.password}</p>}
+                      <p className={`text-xs mt-1 ${textSecondary}`}>
+                        Leave blank to keep current password
+                      </p>
+                    </div>
+
+                    <div>
+                      <label className={`block text-sm font-semibold ${textPrimary} mb-2`}>
+                        Confirm Password
+                      </label>
+                      <div className="relative">
+                        <input
+                          type={showConfirmPassword ? "text" : "password"}
+                          value={confirmPassword}
+                          onChange={(e) => {
+                            setConfirmPassword(e.target.value);
+                            if (errors.confirmPassword) setErrors({...errors, confirmPassword: ''});
+                          }}
+                          className={`w-full px-4 py-3 pr-12 rounded-lg border ${inputBg} ${textPrimary} focus:outline-none focus:ring-2 focus:ring-blue-500 ${errors.confirmPassword ? 'border-red-500' : ''}`}
+                          placeholder="Confirm new password"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                          className={`absolute right-3 top-1/2 -translate-y-1/2 p-1 rounded-lg transition-all ${darkMode ? 'hover:bg-white/10 text-gray-400' : 'hover:bg-gray-100 text-gray-600'}`}
+                        >
+                          {showConfirmPassword ? (
+                            <EyeOff className="w-5 h-5" />
+                          ) : (
+                            <Eye className="w-5 h-5" />
+                          )}
+                        </button>
+                      </div>
+                      {errors.confirmPassword && <p className="text-red-500 text-xs mt-1">{errors.confirmPassword}</p>}
+                    </div>
+                  </div>
                 </div>
 
                 {/* Information Notice */}
                 <div className={`mt-6 sm:mt-8 p-3 sm:p-4 rounded-lg ${darkMode ? 'bg-blue-500/10 border border-blue-500/20' : 'bg-blue-50 border border-blue-200'}`}>
                   <p className={`text-xs sm:text-sm ${darkMode ? 'text-blue-300' : 'text-blue-700'} flex items-start gap-2`}>
                     <span className="mt-0.5">ℹ️</span>
-                    <span>Only your name can be edited. For changes to other information, please contact the administration office.</span>
+                    <span>Only your name and password can be edited. For changes to other information, please contact the administration office.</span>
                   </p>
-                </div>
-
-                {/* Bottom Buttons */}
-                <div className="flex flex-col sm:flex-row gap-3 mt-6 sm:mt-8 pt-4 border-t" style={{borderColor: darkMode ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)'}}>
-                  <button
-                    onClick={onClose}
-                    className={`flex-1 px-4 py-3 rounded-lg font-semibold transition-all ${darkMode ? 'bg-white/10 hover:bg-white/20 text-white' : 'bg-gray-100 hover:bg-gray-200 text-gray-900'}`}
-                  >
-                    Close
-                  </button>
-                  <button
-                    onClick={() => {
-                      if (editingProfile) {
-                        handleSaveProfile();
-                      } else {
-                        setEditingProfile(true);
-                      }
-                    }}
-                    className={`flex-1 px-4 py-3 rounded-lg font-semibold transition-all ${
-                      editingProfile
-                        ? 'bg-gradient-to-r from-emerald-600 to-green-600 text-white hover:from-emerald-700 hover:to-green-700 shadow-lg'
-                        : 'bg-gradient-to-r from-blue-600 to-indigo-600 text-white hover:from-blue-700 hover:to-indigo-700 shadow-lg'
-                    }`}
-                  >
-                    {editingProfile ? (
-                      <div className="flex items-center justify-center gap-2">
-                        <Save className="w-4 h-4" />
-                        <span>Save Name</span>
-                      </div>
-                    ) : (
-                      <div className="flex items-center justify-center gap-2">
-                        <Edit className="w-4 h-4" />
-                        <span>Edit Name</span>
-                      </div>
-                    )}
-                  </button>
                 </div>
               </div>
             </div>
+          </div>
+        </div>
+        
+        {/* Bottom Buttons - Fixed at bottom */}
+        <div className="flex-shrink-0 p-4 sm:p-6 border-t" style={{borderColor: darkMode ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)'}}>
+          <div className="flex flex-col sm:flex-row gap-3">
+            <button
+              onClick={onClose}
+              className={`flex-1 px-4 py-3 rounded-lg font-semibold transition-all ${darkMode ? 'bg-white/10 hover:bg-white/20 text-white' : 'bg-gray-100 hover:bg-gray-200 text-gray-900'}`}
+            >
+              Close
+            </button>
+            <button
+              onClick={() => {
+                if (editingProfile) {
+                  handleSaveProfile();
+                } else {
+                  setEditingProfile(true);
+                }
+              }}
+              className={`flex-1 px-4 py-3 rounded-lg font-semibold transition-all ${
+                editingProfile
+                  ? 'bg-gradient-to-r from-emerald-600 to-green-600 text-white hover:from-emerald-700 hover:to-green-700 shadow-lg'
+                  : 'bg-gradient-to-r from-blue-600 to-indigo-600 text-white hover:from-blue-700 hover:to-indigo-700 shadow-lg'
+              }`}
+            >
+              {editingProfile ? (
+                <div className="flex items-center justify-center gap-2">
+                  <Save className="w-4 h-4" />
+                  <span>Save Changes</span>
+                </div>
+              ) : (
+                <div className="flex items-center justify-center gap-2">
+                  <Edit className="w-4 h-4" />
+                  <span>Edit Profile</span>
+                </div>
+              )}
+            </button>
           </div>
         </div>
       </div>

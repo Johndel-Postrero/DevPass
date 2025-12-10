@@ -15,9 +15,9 @@ return new class extends Migration
             Schema::create('security_guards', function (Blueprint $table) {
                 $table->string('guard_id', 20)->primary();
                 $table->string('name', 100);
-                $table->string('email', 158)->nullable();
+                $table->string('email', 150)->unique(); // Per database diagram: varchar(150) not null unique
                 $table->string('phone', 15)->nullable();
-                $table->string('password')->nullable(); // For authentication
+                $table->string('password', 255); // Per database diagram: varchar(255) not null
                 $table->timestamps();
             });
         }

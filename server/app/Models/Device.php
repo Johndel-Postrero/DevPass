@@ -12,28 +12,27 @@ use Illuminate\Database\Eloquent\Relations\HasOne; // Added for activeQrCode
 // You need to import the Admin model to define the relationship
 use App\Models\Admin; 
 use App\Models\Student; // Added Student import for clarity
+use App\Models\LaptopSpecification; // Added for specifications relationship
 
 class Device extends Model
 {
     use HasFactory, SoftDeletes;
 
+    // Note: Table is 'devices' but represents LAPTOP per database diagram
     protected $table = 'devices';
-    protected $primaryKey = 'laptop_id'; // Matches your migration primary key
+    protected $primaryKey = 'laptop_id'; // Matches database diagram
 
     protected $fillable = [
         'student_id',
-        'device_type',      // Added per data dictionary
-        'model',
-        'model_number',     // Added per data dictionary
-        'serial_number',
-        'mac_address',      // Added per data dictionary
-        'brand',
+        'model',           // Per database diagram: string
+        'serial_number',  // Per database diagram: varchar(100) unique
+        'brand',          // Per database diagram: varchar(50) not null
         'registration_date',
         'registration_status',
-        'approved_by',   // <-- UNCOMMENTED: Needed for approval
-        'approved_at',   // <-- UNCOMMENTED: Needed for approval
-        'original_values', // Store original values before edit for rejection rollback
-        'last_action', // Track last action: 'approved', 'rejected', 'reverted'
+        'approved_by',    // Per database diagram: FK to ADMIN.admin_id
+        'approved_at',
+        'original_values', // Added in migration 2025_12_08_174216_add_devices_original_values.php
+        'last_action',    // Added in migration 2025_12_08_174216_add_devices_original_values.php
     ];
 
     protected $casts = [
@@ -48,12 +47,16 @@ class Device extends Model
     // --- RELATIONSHIPS ---
 
     /**
-     * Get the student that owns the device.
+     * Get the student that owns the laptop.
      */
     public function student(): BelongsTo
     {
-        // NOTE: If Student model doesn't use 'id' as primary key, change the third argument.
-        return $this->belongsTo(Student::class, 'student_id', 'id');
+        // Check which primary key column exists in students table
+        $hasStudentId = \Illuminate\Support\Facades\Schema::hasColumn('students', 'student_id');
+        $ownerKey = $hasStudentId ? 'student_id' : 'id';
+        
+        // Foreign key on devices table is 'student_id', owner key depends on database structure
+        return $this->belongsTo(Student::class, 'student_id', $ownerKey);
     }
 
     /**
@@ -72,6 +75,15 @@ class Device extends Model
     public function qrCodes(): HasMany
     {
         return $this->hasMany(QRCode::class, 'laptop_id', 'laptop_id');
+    }
+
+    /**
+     * Get the laptop specifications for this model.
+     * Multiple devices can share the same model and reference the same specifications.
+     */
+    public function specifications(): BelongsTo
+    {
+        return $this->belongsTo(LaptopSpecification::class, 'model', 'model');
     }
 
     // ... Scopes and status methods remain the same ...

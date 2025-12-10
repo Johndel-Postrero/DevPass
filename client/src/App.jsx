@@ -1,20 +1,26 @@
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom'
-import StudentDashboard from './pages/student/StudentDashboard'
+import { lazy, Suspense } from 'react'
 import './App.css'
-import Landing from './pages/Landing'
-import AdminDashboard from './pages/admin/AdminDashboard'
-import SecurityPersonnel from './pages/Personnel/SecurityPersonnel'
-import AdminSettings from './pages/admin/AdminSettings'
+
+// Lazy load all page components for code splitting
+const Landing = lazy(() => import('./pages/Landing'))
+const StudentDashboard = lazy(() => import('./pages/student/StudentDashboard'))
+const AdminDashboard = lazy(() => import('./pages/admin/AdminDashboard'))
+const SecurityPersonnel = lazy(() => import('./pages/Personnel/SecurityPersonnel'))
+const AdminSettings = lazy(() => import('./pages/admin/AdminSettings'))
+
 function App() {
   return (
     <Router>
-      <Routes>
-        <Route path="/" element={<Landing />} />
-        <Route path="/student/dashboard" element={<StudentDashboard />} />
-        <Route path="/admin/dashboard" element={<AdminDashboard />} />
-        <Route path="/personnel/dashboard" element={<SecurityPersonnel />} />
-        <Route path="/admin/settings" element={<AdminSettings />} />
-      </Routes>
+      <Suspense fallback={null}>
+        <Routes>
+          <Route path="/" element={<Landing />} />
+          <Route path="/student/dashboard" element={<StudentDashboard />} />
+          <Route path="/admin/dashboard" element={<AdminDashboard />} />
+          <Route path="/personnel/dashboard" element={<SecurityPersonnel />} />
+          <Route path="/admin/settings" element={<AdminSettings />} />
+        </Routes>
+      </Suspense>
     </Router>
   )
 }

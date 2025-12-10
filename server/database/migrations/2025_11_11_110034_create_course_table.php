@@ -13,14 +13,11 @@ return new class extends Migration
     {
         if (!Schema::hasTable('course')) {
             Schema::create('course', function (Blueprint $table) {
-                $table->string('course_id')->primary();
-                $table->string('course_name');
-                $table->string('course_code');
-                $table->string('description');
+                $table->integer('course_id')->primary(); // Changed to integer per database diagram
+                $table->string('course_name', 100);
+                $table->string('course_code', 20)->unique();
+                $table->text('description')->nullable();
                 $table->timestamps();
-
-                // $table->string('department_id');
-                // $table->foreign('department_id')->references('department_id')->on('department')->onDelete('cascade');
             });
         }
     }

@@ -31,7 +31,15 @@ class DeviceController extends Controller
         // 'student' -> belongs to Student::class
         // 'admin' -> belongs to Admin::class (using 'approved_by' column)
         // 'qrCodes' -> hasMany QrCode::class
-        $query = Device::with(['student', 'admin']); // Removed 'qrCodes' from eager loading in index for efficiency if not strictly needed immediately
+        // Eager load all relationships to prevent N+1 queries
+        // Optimize: Load only active QR codes, latest first
+        $query = Device::with([
+            'student', 
+            'admin', 
+            'qrCodes' => function($q) {
+                $q->where('is_active', true)->latest('expires_at');
+            }
+        ]);
         
         // --- Admin/Student Authorization Logic ---
         $isAdmin = false;
@@ -47,12 +55,13 @@ class DeviceController extends Controller
             
             // If not admin, filter by student_id
             if (!$isAdmin) {
-                $query->where('student_id', $user->id);
+                $query->where('student_id', $user->student_id ?? $user->id); // Support both for backward compatibility
             }
         }
         
-        // For students, include rejected and soft-deleted devices when status is 'all'
+        // For students, include rejected and soft-deleted devices when status is 'all' or not specified
         // This ensures devices that have been scanned (even if rejected/deleted) appear in the list
+        // IMPORTANT: Always include devices with recent 'reverted' last_action so notifications work
         if (!$isAdmin && (!$status || $status === 'all')) {
             $query->withTrashed(); // Include soft-deleted devices
         }
@@ -60,30 +69,58 @@ class DeviceController extends Controller
         // --- Status Filtering ---
         if ($status && $status !== 'all') {
             $query->where('registration_status', $status);
+            // Note: Devices with 'reverted' last_action have status='active', so they're already included
         } else if (!$isAdmin) {
             // For students with 'all' filter, show all statuses including rejected
             // Don't filter by status, just show everything
+            // This ensures devices with 'reverted' last_action are always visible
         }
         
-        $devices = $query->orderBy('registration_date', 'desc')->get();
+        // Add pagination to prevent loading all devices at once (CRITICAL for performance)
+        $perPage = $request->query('per_page', 20); // Default 20 per page, max 100
+        $perPage = min(max((int)$perPage, 1), 100); // Enforce limits: 1-100
+        
+        $devices = $query->orderBy('registration_date', 'desc')->paginate($perPage);
+        
+        // Get all QR code hashes for batch querying entry logs (optimized with collection methods)
+        $qrHashes = $devices->getCollection()->flatMap(function($device) {
+            return $device->qrCodes->pluck('qr_code_hash')->filter();
+        })->unique()->values()->toArray();
+        
+        // Batch load entry logs to prevent N+1 queries
+        $entryLogs = [];
+        if (!empty($qrHashes)) {
+            $entries = EntryLog::whereIn('qr_code_hash', $qrHashes)
+                ->where('status', 'success')
+                ->orderBy('scan_timestamp', 'desc')
+                ->get()
+                ->groupBy('qr_code_hash');
+            
+            // Get the latest entry for each QR code
+            foreach ($entries as $hash => $logs) {
+                $entryLogs[$hash] = $logs->first();
+            }
+        }
         
         // Format response for frontend
-        $formatted = $devices->map(function ($device) {
+        $formatted = $devices->getCollection()->map(function ($device) use ($entryLogs) {
             // Use the correct primary key name: 'laptop_id'
             $idKey = 'laptop_id';
             
-            // Eager load qrCodes only when needed inside the map, or better, fetch outside.
-            // Assuming QrCode model has a device_id column that maps to Device's laptop_id
-            $latestQR = $device->qrCodes()->where('is_active', true)->latest('expires_at')->first();
+            // Get latest active QR code from eager loaded relationship
+            $latestQR = null;
+            if ($device->qrCodes && $device->qrCodes->isNotEmpty()) {
+                // Filter for active QR codes and get the latest by expires_at
+                $activeQRCodes = $device->qrCodes->where('is_active', true);
+                if ($activeQRCodes->isNotEmpty()) {
+                    $latestQR = $activeQRCodes->sortByDesc('expires_at')->first();
+                }
+            }
             
-            // Get last scanned timestamp from entry_log
+            // Get last scanned timestamp from pre-loaded entry logs
             $lastScanned = null;
-            if ($latestQR) {
-                $lastEntry = EntryLog::where('qr_code_hash', $latestQR->qr_code_hash)
-                    ->where('status', 'success')
-                    ->latest('scan_timestamp')
-                    ->first();
-                
+            if ($latestQR && isset($entryLogs[$latestQR->qr_code_hash])) {
+                $lastEntry = $entryLogs[$latestQR->qr_code_hash];
                 if ($lastEntry && $lastEntry->scan_timestamp) {
                     $lastScanned = $lastEntry->scan_timestamp->setTimezone(config('app.timezone'))->format('M d, Y h:i A');
                 }
@@ -98,7 +135,7 @@ class DeviceController extends Controller
                 // CHANGED: Primary key is 'laptop_id' in your schema
                 'id' => $device->$idKey, 
                 'studentName' => $device->student->name ?? 'Unknown',
-                'studentId' => $device->student->id ?? 'N/A',
+                'studentId' => $device->student->student_id ?? $device->student->id ?? 'N/A',
                 'course' => $device->student->course ?? 'N/A',
                 // REMOVED 'type' as it's not in the schema, using 'model'/'brand' instead
                 'brand' => $device->brand,
@@ -116,7 +153,16 @@ class DeviceController extends Controller
             ];
         });
         
-        return response()->json($formatted);
+        // Return paginated response with metadata
+        return response()->json([
+            'data' => $formatted,
+            'current_page' => $devices->currentPage(),
+            'per_page' => $devices->perPage(),
+            'total' => $devices->total(),
+            'last_page' => $devices->lastPage(),
+            'from' => $devices->firstItem(),
+            'to' => $devices->lastItem(),
+        ]);
     }
 
     /**
@@ -150,7 +196,7 @@ class DeviceController extends Controller
         // Use withTrashed() to include soft-deleted devices
         $devices = Device::withTrashed()
             ->with(['admin'])
-            ->where('student_id', $user->id)
+            ->where('student_id', $user->student_id ?? $user->id)
             ->where(function($query) {
                 // Include devices that have been approved, rejected, or deleted
                 // A device should appear in history if:
@@ -165,6 +211,7 @@ class DeviceController extends Controller
             })
             ->orderByRaw('CASE WHEN deleted_at IS NOT NULL THEN deleted_at ELSE approved_at END DESC')
             ->orderBy('created_at', 'desc')
+            ->limit(50) // Limit to 50 most recent history items for performance
             ->get();
         
         $history = $devices->map(function ($device) {
@@ -413,10 +460,10 @@ class DeviceController extends Controller
         
         try {
             $device = Device::create([
-                'student_id' => $student->id,
+                'student_id' => $student->student_id ?? $student->id,
                 // Removed 'device_type' if it's not in the schema
                 'brand' => $validated['brand'] ?? null,
-                'model' => $validated['model'], // Model is required and unique
+                'model' => $validated['model'], // Model is required - FK to laptop_specifications.model
                 'serial_number' => $validated['serial_number'] ?? null,
                 // Removed all PC component fields (processor, motherboard, memory, etc.)
                 'registration_date' => Carbon::now(config('app.timezone')),
@@ -468,18 +515,16 @@ class DeviceController extends Controller
      */
     public function show(string $id)
     {
-        $device = Device::with(['student', 'admin', 'qrCodes'])->findOrFail($id);
+        $device = Device::with(['student', 'admin', 'qrCodes', 'specifications'])->findOrFail($id);
         $latestQR = $device->qrCodes()->where('is_active', true)->latest('expires_at')->first();
         
-        // Get laptop specifications
-        $specs = \Illuminate\Support\Facades\DB::table('laptop_specifications')
-            ->where('model', $device->model)
-            ->first();
+        // Get laptop specifications via relationship (auto-filled when model matches)
+        $specs = $device->specifications;
         
         return response()->json([
             'id' => $device->laptop_id,
             'studentName' => $device->student->name ?? 'Unknown',
-            'studentId' => $device->student->id ?? 'N/A',
+            'studentId' => $device->student->student_id ?? $device->student->id ?? 'N/A',
             'course' => $device->student->course ?? 'N/A',
             'brand' => $device->brand,
             'model' => $device->model,
@@ -487,7 +532,7 @@ class DeviceController extends Controller
             'status' => $device->registration_status,
             'registrationDate' => $device->registration_date ? $device->registration_date->format('Y-m-d') : null,
             'qrExpiry' => $latestQR && $latestQR->expires_at ? $latestQR->expires_at->setTimezone(config('app.timezone'))->format('Y-m-d') : null,
-            // Advanced specifications
+            // Advanced specifications (auto-filled from laptop_specifications when model matches)
             'processor' => $specs->processor ?? null,
             'motherboard' => $specs->motherboard ?? null,
             'memory' => $specs->memory ?? null,
@@ -496,7 +541,7 @@ class DeviceController extends Controller
             'casing' => $specs->casing ?? null,
             'cdRom' => $specs->cd_dvd_rom ?? null,
             'operatingSystem' => $specs->operating_system ?? null,
-            'macAddress' => $device->mac_address ?? null,
+            // 'macAddress' removed - not in database diagram
         ]);
     }
 
@@ -509,7 +554,7 @@ class DeviceController extends Controller
         $user = $request->user();
         
         // Check if user owns the device
-        if ($device->student_id !== $user->id) {
+        if ($device->student_id !== ($user->student_id ?? $user->id)) {
             return response()->json(['message' => 'Unauthorized. You can only edit your own devices.'], 403);
         }
         
@@ -531,7 +576,7 @@ class DeviceController extends Controller
             'casing' => 'sometimes|nullable|string|max:100',
             'cd_rom' => 'sometimes|nullable|string|max:100',
             'operating_system' => 'sometimes|nullable|string|max:100',
-            'mac_address' => 'sometimes|nullable|string|max:100',
+            // 'mac_address' removed from validation - not in database diagram
         ]);
         
         // Check for duplicate serial number across ALL students (excluding current device)
@@ -623,7 +668,7 @@ class DeviceController extends Controller
         $user = $request->user();
         
         // Check if user owns the device
-        if ($device->student_id !== $user->id) {
+        if ($device->student_id !== ($user->student_id ?? $user->id)) {
             return response()->json(['message' => 'Unauthorized. You can only delete your own devices.'], 403);
         }
         
@@ -656,7 +701,7 @@ class DeviceController extends Controller
         $user = $request->user();
         
         // Check if user owns the device
-        if ($device->student_id !== $user->id) {
+        if ($device->student_id !== ($user->student_id ?? $user->id)) {
             return response()->json(['message' => 'Unauthorized. You can only renew QR codes for your own devices.'], 403);
         }
         

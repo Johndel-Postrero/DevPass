@@ -5,7 +5,8 @@ const api = axios.create({
     headers: {
         'Content-Type': 'application/json',
         'Accept': 'application/json'
-    }
+    },
+    timeout: 30000, // 30 second timeout to prevent hanging requests
 });
 
 // Add token to every request if it exists

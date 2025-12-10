@@ -192,10 +192,12 @@ export default function SecurityPersonnel() {
   const [stream, setStream] = useState(null);
   const [loading, setLoading] = useState(true);
   const [processingDecision, setProcessingDecision] = useState(false);
+  const [isProcessingScan, setIsProcessingScan] = useState(false);
   const [scanHistory, setScanHistory] = useState([]);
   const [error, setError] = useState(null);
   const [selectedScan, setSelectedScan] = useState(null);
   const [showSettings, setShowSettings] = useState(false);
+  const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
   const [security, setSecurity] = useState(null);
   const [isAuthenticated, setIsAuthenticated] = useState(true); // Track auth status to stop polling
 
@@ -928,6 +930,7 @@ export default function SecurityPersonnel() {
           console.log('Extracted hash from JSON:', hash.substring(0, 20) + '...');
         } else if (jsonData.deviceId) {
           // Old format - try to use deviceId to get hash (not ideal, but handle it)
+          setIsProcessingScan(false);
           setScanResult({
             valid: false,
             message: 'QR code format outdated. Please regenerate QR code.',
@@ -944,6 +947,7 @@ export default function SecurityPersonnel() {
         // Try to extract hash from URL path
         const urlMatch = hash.match(/\/devices\/(\d+)\/scan/);
         if (urlMatch) {
+          setIsProcessingScan(false);
           setScanResult({
             valid: false,
             message: 'Invalid QR code format. QR code should contain the device hash, not a URL. Please regenerate the QR code.',
@@ -956,6 +960,7 @@ export default function SecurityPersonnel() {
         if (hashMatch) {
           hash = hashMatch[0];
         } else {
+          setIsProcessingScan(false);
           setScanResult({
             valid: false,
             message: 'Invalid QR code format. QR code should contain the device hash, not a URL.',
@@ -967,6 +972,7 @@ export default function SecurityPersonnel() {
       
       // Validate hash format (SHA256 hash should be 64 hex characters)
       if (!/^[a-fA-F0-9]{64}$/.test(hash)) {
+        setIsProcessingScan(false);
         setScanResult({
           valid: false,
           message: 'Invalid QR code format. QR code hash is not in the correct format.',
@@ -977,41 +983,62 @@ export default function SecurityPersonnel() {
       
       console.log('Final QR hash:', hash.substring(0, 20) + '...');
       
-      // First, try to read QR code to get student info (doesn't log activity)
-      const readResult = await securityService.readQR(hash);
+      // Show loading modal
+      setIsProcessingScan(true);
       
-      // Store the hash in the result for accept/deny actions
-      if (readResult.valid) {
-        setScanResult({
-          ...readResult,
-          qr_hash: hash // Store hash for accept/deny actions
-        });
-      } else {
-        // QR not found in system or invalid - show error in modal
+      try {
+        // First, try to read QR code to get student info (doesn't log activity)
+        const readResult = await securityService.readQR(hash);
+        
+        // Hide loading modal
+        setIsProcessingScan(false);
+        
+        // Store the hash in the result for accept/deny actions
+        if (readResult.valid) {
+          setScanResult({
+            ...readResult,
+            qr_hash: hash // Store hash for accept/deny actions
+          });
+        } else {
+          // QR not found in system or invalid - show error in modal
+          setScanResult({
+            valid: false,
+            message: readResult.message || 'QR code is not registered in the system or the device is not active.',
+            student_data: null,
+            device: null
+          });
+        }
+      } catch (error) {
+        console.error('QR read error:', error);
+        
+        // Hide loading modal
+        setIsProcessingScan(false);
+        
+        // Get user-friendly error message
+        let errorMessage = 'QR code is not registered in the system or the device is not active.';
+        
+        if (error.response?.data?.message) {
+          errorMessage = error.response.data.message;
+        } else if (error.response?.status === 404) {
+          errorMessage = 'QR code is not registered in the system. This QR code does not exist in our database.';
+        } else if (error.response?.status === 400) {
+          errorMessage = 'QR code is expired or inactive. Please renew the QR code.';
+        }
+        
         setScanResult({
           valid: false,
-          message: readResult.message || 'QR code is not registered in the system or the device is not active.',
+          message: errorMessage,
           student_data: null,
           device: null
         });
       }
-      
     } catch (error) {
-      console.error('QR read error:', error);
-      // Get user-friendly error message
-      let errorMessage = 'QR code is not registered in the system or the device is not active.';
-      
-      if (error.response?.data?.message) {
-        errorMessage = error.response.data.message;
-      } else if (error.response?.status === 404) {
-        errorMessage = 'QR code is not registered in the system. This QR code does not exist in our database.';
-      } else if (error.response?.status === 400) {
-        errorMessage = 'QR code is expired or inactive. Please renew the QR code.';
-      }
-      
+      // Handle any unexpected errors in the outer try block
+      console.error('Unexpected error in handleQRScanned:', error);
+      setIsProcessingScan(false);
       setScanResult({
         valid: false,
-        message: errorMessage,
+        message: 'An unexpected error occurred while processing the QR code. Please try again.',
         student_data: null,
         device: null
       });
@@ -1217,15 +1244,9 @@ export default function SecurityPersonnel() {
                 <Settings className={`w-5 h-5 ${textSecondary}`} />
               </button>
               <button 
-                onClick={() => {
-                  localStorage.removeItem('token');
-                  localStorage.removeItem('student');
-                  localStorage.removeItem('rememberMe');
-                  sessionStorage.removeItem('token');
-                  sessionStorage.removeItem('student');
-                  window.location.replace('/');
-                }}
+                onClick={() => setShowLogoutConfirm(true)}
                 className={`p-1.5 sm:p-2 rounded-lg sm:rounded-xl transition-all ${darkMode ? 'hover:bg-white/10 text-red-400' : 'hover:bg-gray-100 text-red-600'}`}
+                title="Logout"
               >
                 <LogOut className="w-4 h-4 sm:w-5 sm:h-5" />
               </button>
@@ -1470,14 +1491,36 @@ export default function SecurityPersonnel() {
         )}
       </div>
 
-      {/* Scan Result Modal */}
-      {scanResult && (
+      {/* Loading Modal - Shows while processing scan */}
+      {isProcessingScan && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className={`${darkMode ? 'bg-black border-white/10' : 'bg-white border-gray-200'} border rounded-2xl w-full max-w-md shadow-2xl`}>
+            <div className="p-8 text-center">
+              <div className="flex flex-col items-center gap-4">
+                <div className={`p-4 rounded-full ${darkMode ? 'bg-blue-500/20' : 'bg-blue-100'}`}>
+                  <Loader2 className={`w-12 h-12 ${darkMode ? 'text-blue-400' : 'text-blue-600'} animate-spin`} />
+                </div>
+                <div>
+                  <h2 className={`text-xl font-bold mb-2 ${textPrimary}`}>Processing QR Code</h2>
+                  <p className={`text-sm ${textSecondary}`}>Please wait while we verify the QR code...</p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Scan Result Modal - Only show when not processing */}
+      {scanResult && !isProcessingScan && (
         <ScanResultModal
           result={scanResult}
           darkMode={darkMode}
           gate={gate}
           processing={processingDecision}
-          onClose={() => setScanResult(null)}
+          onClose={() => {
+            setScanResult(null);
+            setIsProcessingScan(false);
+          }}
           onAccept={handleAccept}
           onDeny={handleDeny}
         />
@@ -1601,6 +1644,57 @@ export default function SecurityPersonnel() {
         </div>
         
       )}
+      {/* Logout Confirmation Modal */}
+      {showLogoutConfirm && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className={`${darkMode ? 'bg-black border-white/10' : 'bg-white border-gray-200'} rounded-2xl w-full max-w-md shadow-2xl border`}>
+            <div className="p-6">
+              <div className="flex items-center gap-4 mb-4">
+                <div className={`p-3 rounded-full ${darkMode ? 'bg-red-500/20' : 'bg-red-100'}`}>
+                  <LogOut className={`w-6 h-6 ${darkMode ? 'text-red-400' : 'text-red-600'}`} />
+                </div>
+                <div>
+                  <h2 className={`text-xl font-bold ${textPrimary}`}>Confirm Logout</h2>
+                  <p className={`text-sm ${textSecondary}`}>Are you sure you want to log out?</p>
+                </div>
+              </div>
+              
+              <p className={`text-sm mb-6 ${textSecondary}`}>
+                You will need to log in again to access your account.
+              </p>
+
+              <div className="flex gap-3">
+                <button
+                  onClick={() => setShowLogoutConfirm(false)}
+                  className={`flex-1 px-4 py-2.5 rounded-lg font-semibold transition-all ${darkMode ? 'bg-white/10 hover:bg-white/20 text-white' : 'bg-gray-100 hover:bg-gray-200 text-gray-900'}`}
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={() => {
+                    // Clear storage synchronously first (before closing modal)
+                    localStorage.removeItem('token');
+                    localStorage.removeItem('student');
+                    localStorage.removeItem('security');
+                    localStorage.removeItem('rememberMe');
+                    sessionStorage.removeItem('token');
+                    sessionStorage.removeItem('student');
+                    sessionStorage.removeItem('security');
+                    // Close modal
+                    setShowLogoutConfirm(false);
+                    // Navigate to landing page immediately - this will cause full page reload
+                    window.location.replace('/');
+                  }}
+                  className="flex-1 px-4 py-2.5 rounded-lg font-semibold bg-gradient-to-r from-red-600 to-rose-600 text-white hover:from-red-700 hover:to-rose-700 transition-all shadow-lg"
+                >
+                  Logout
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Add this with your other modals */}
       {showSettings && (
         <SecuritySettingsModal 

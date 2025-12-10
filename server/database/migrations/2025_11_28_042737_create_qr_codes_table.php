@@ -17,12 +17,14 @@ return new class extends Migration
                 $table->unsignedBigInteger('laptop_id');
                 $table->string('qr_code_hash', 255);
                 $table->timestamp('generated_at')->nullable();
-                $table->timestamp('expires_at')->nullable();
+                $table->timestamp('expires_at');
                 $table->boolean('is_active')->default(true);
                 $table->timestamps();
                 
                 $table->foreign('laptop_id')->references('laptop_id')->on('devices')->onDelete('cascade');
-                $table->unique('qr_code_hash');
+                $table->unique('qr_code_hash'); // Per database diagram: unique index
+                $table->index('laptop_id'); // Per database diagram: index
+                $table->index('is_active'); // Per database diagram: index
             });
         }
     }

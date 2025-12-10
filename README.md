@@ -421,6 +421,36 @@ MAIL_ENCRYPTION=tls
 
 ---
 
+## ⚡ Performance Optimization
+
+The application has been optimized for faster startup and better performance. See [PERFORMANCE_OPTIMIZATION.md](./PERFORMANCE_OPTIMIZATION.md) for detailed information.
+
+### Quick Optimization (Production)
+
+**Backend:**
+```bash
+cd server
+composer dump-autoload -o
+composer run optimize
+```
+
+**Frontend:**
+```bash
+cd client
+npm run build
+```
+
+### What's Optimized
+
+- ✅ **Lazy-loaded routes**: Pages load on-demand, reducing initial bundle size
+- ✅ **Code splitting**: Vendor libraries cached separately
+- ✅ **Laravel caching**: Config, routes, views, and events are cached
+- ✅ **Optimized autoloader**: Faster class resolution
+
+**Note:** During development, caches are automatically cleared. For production, run optimization commands before deployment.
+
+---
+
 ## 📝 Important Notes
 
 ### Files NOT in Git (Don't Commit These)
