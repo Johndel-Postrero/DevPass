@@ -16,6 +16,7 @@ class Gate extends Model
     protected $fillable = [
         'gate_name',
         'location',
+        'is_active', // Per database diagram
     ];
 
     public function entryLogs(): HasMany

@@ -15,7 +15,7 @@ class LaptopSpecificationSeeder extends Seeder
     {
         $specifications = [
             [
-                'laptop_id' => 1,
+                'model' => 'Dell Inspiron 15 3000',
                 'processor' => 'Intel Core i5-1235U (12th Gen, 10-core)',
                 'motherboard' => 'Dell Inspiron 15 3000 Series Motherboard',
                 'memory' => '8GB DDR4 3200MHz',
@@ -26,7 +26,7 @@ class LaptopSpecificationSeeder extends Seeder
                 'operating_system' => 'Windows 11 Home 64-bit',
             ],
             [
-                'laptop_id' => 2,
+                'model' => 'HP Pavilion Gaming 15',
                 'processor' => 'AMD Ryzen 7 5800H (8-core, 16-thread)',
                 'motherboard' => 'HP Pavilion Gaming 15 Motherboard',
                 'memory' => '16GB DDR4 3200MHz',
@@ -37,7 +37,7 @@ class LaptopSpecificationSeeder extends Seeder
                 'operating_system' => 'Windows 11 Home 64-bit',
             ],
             [
-                'laptop_id' => 3,
+                'model' => 'MacBook Air M2',
                 'processor' => 'Apple M2 (8-core CPU, 10-core GPU)',
                 'motherboard' => 'Apple M2 SoC (System on Chip)',
                 'memory' => '8GB Unified Memory',
@@ -48,7 +48,7 @@ class LaptopSpecificationSeeder extends Seeder
                 'operating_system' => 'macOS Ventura',
             ],
             [
-                'laptop_id' => 4,
+                'model' => 'Lenovo Legion 5 Pro',
                 'processor' => 'Intel Core i7-12700H (14-core, 20-thread)',
                 'motherboard' => 'Lenovo Legion 5 Pro Motherboard',
                 'memory' => '16GB DDR5 4800MHz',
@@ -59,7 +59,7 @@ class LaptopSpecificationSeeder extends Seeder
                 'operating_system' => 'Windows 11 Pro 64-bit',
             ],
             [
-                'laptop_id' => 5,
+                'model' => 'ASUS ROG Strix G18',
                 'processor' => 'Intel Core i9-13900HX (24-core, 32-thread)',
                 'motherboard' => 'ASUS ROG Strix G18 Motherboard',
                 'memory' => '32GB DDR5 4800MHz',
@@ -70,7 +70,7 @@ class LaptopSpecificationSeeder extends Seeder
                 'operating_system' => 'Windows 11 Pro 64-bit',
             ],
             [
-                'laptop_id' => 6,
+                'model' => 'Acer Aspire 3',
                 'processor' => 'Intel Core i3-1115G4 (2-core, 4-thread)',
                 'motherboard' => 'Acer Aspire 3 Motherboard',
                 'memory' => '4GB DDR4 2666MHz',
@@ -81,7 +81,7 @@ class LaptopSpecificationSeeder extends Seeder
                 'operating_system' => 'Windows 11 Home S Mode',
             ],
             [
-                'laptop_id' => 7,
+                'model' => 'Lenovo IdeaPad Slim 3',
                 'processor' => 'AMD Ryzen 5 7530U (6-core, 12-thread)',
                 'motherboard' => 'Lenovo IdeaPad Slim 3 Motherboard',
                 'memory' => '8GB DDR4 3200MHz',
@@ -92,7 +92,7 @@ class LaptopSpecificationSeeder extends Seeder
                 'operating_system' => 'Windows 11 Home 64-bit',
             ],
             [
-                'laptop_id' => 8,
+                'model' => 'Dell XPS 13 Plus',
                 'processor' => 'Intel Core i7-1355U (10-core, 12-thread)',
                 'motherboard' => 'Dell XPS 13 Plus Motherboard',
                 'memory' => '16GB LPDDR5 6000MHz',
@@ -103,7 +103,7 @@ class LaptopSpecificationSeeder extends Seeder
                 'operating_system' => 'Windows 11 Pro 64-bit',
             ],
             [
-                'laptop_id' => 9,
+                'model' => 'MacBook Pro 14 M2 Pro',
                 'processor' => 'Apple M2 Pro (12-core CPU, 19-core GPU)',
                 'motherboard' => 'Apple M2 Pro SoC',
                 'memory' => '16GB Unified Memory',
@@ -114,7 +114,7 @@ class LaptopSpecificationSeeder extends Seeder
                 'operating_system' => 'macOS Ventura',
             ],
             [
-                'laptop_id' => 10,
+                'model' => 'HP Stream 14',
                 'processor' => 'Intel Pentium Silver N6000 (4-core)',
                 'motherboard' => 'HP Stream 14 Motherboard',
                 'memory' => '4GB DDR4 2400MHz',
@@ -125,7 +125,7 @@ class LaptopSpecificationSeeder extends Seeder
                 'operating_system' => 'Windows 11 Home S Mode',
             ],
             [
-                'laptop_id' => 11,
+                'model' => 'ASUS Zephyrus G14',
                 'processor' => 'AMD Ryzen 9 7940HS (8-core, 16-thread)',
                 'motherboard' => 'ASUS Zephyrus G14 Motherboard',
                 'memory' => '16GB DDR5 4800MHz',
@@ -136,7 +136,7 @@ class LaptopSpecificationSeeder extends Seeder
                 'operating_system' => 'Windows 11 Pro 64-bit',
             ],
             [
-                'laptop_id' => 12,
+                'model' => 'Microsoft Surface Laptop 5',
                 'processor' => 'Intel Core i5-1335U (10-core, 12-thread)',
                 'motherboard' => 'Microsoft Surface Laptop 5 Motherboard',
                 'memory' => '8GB LPDDR5x 6400MHz',
@@ -147,7 +147,7 @@ class LaptopSpecificationSeeder extends Seeder
                 'operating_system' => 'Windows 11 Home 64-bit',
             ],
             [
-                'laptop_id' => 13,
+                'model' => 'Lenovo Chromebook 3',
                 'processor' => 'Intel Celeron N4020 (2-core, 2-thread)',
                 'motherboard' => 'Lenovo Chromebook 3 Motherboard',
                 'memory' => '4GB LPDDR4 2400MHz',
@@ -158,7 +158,7 @@ class LaptopSpecificationSeeder extends Seeder
                 'operating_system' => 'Chrome OS',
             ],
             [
-                'laptop_id' => 14,
+                'model' => 'Lenovo ThinkPad X13 Gen 3',
                 'processor' => 'AMD Ryzen 7 6800U (8-core, 16-thread)',
                 'motherboard' => 'Lenovo ThinkPad X13 Gen 3 Motherboard',
                 'memory' => '16GB LPDDR5 6400MHz',
@@ -169,7 +169,7 @@ class LaptopSpecificationSeeder extends Seeder
                 'operating_system' => 'Windows 11 Pro 64-bit',
             ],
             [
-                'laptop_id' => 15,
+                'model' => 'MSI Katana GF66',
                 'processor' => 'Intel Core i7-13700H (14-core, 20-thread)',
                 'motherboard' => 'MSI Katana GF66 Motherboard',
                 'memory' => '16GB DDR5 4800MHz',
@@ -183,7 +183,7 @@ class LaptopSpecificationSeeder extends Seeder
 
         foreach ($specifications as $spec) {
             DB::table('laptop_specifications')->insert([
-                'laptop_id' => $spec['laptop_id'],
+                'model' => $spec['model'],
                 'processor' => $spec['processor'],
                 'motherboard' => $spec['motherboard'],
                 'memory' => $spec['memory'],

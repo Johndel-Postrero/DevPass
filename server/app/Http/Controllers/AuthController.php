@@ -20,14 +20,17 @@ class AuthController extends Controller
      */
     public function register(Request $request)
     {
+        // Check which column exists in students table for backward compatibility
+        $hasStudentId = \Illuminate\Support\Facades\Schema::hasColumn('students', 'student_id');
+        $idColumn = $hasStudentId ? 'student_id' : 'id';
+        
         $validated = $request->validate([
-            'id' => 'required|string|min:8|max:8|unique:students,id',
+            'id' => 'required|string|min:8|max:20|unique:students,' . $idColumn, // Use actual column name
             'name' => 'required|string|max:100',
             'email' => 'required|email|unique:students,email',
             'password' => 'required|string|min:6|confirmed',
             'phone' => 'nullable|string|max:15',
-            // 'department_id' => 'nullable|string|max:50',
-            'course_id' => 'nullable|string|exists:course,course_id',
+            'course_id' => 'nullable|integer|exists:course,course_id', // Integer per database diagram
             'year_of_study' => 'nullable|integer',
         ]);
 
@@ -87,13 +90,21 @@ class AuthController extends Controller
     }
 
     /**
-     * Get authenticated user profile (student or security guard)
+     * Get authenticated user profile (admin, student, or security guard)
      */
     public function profile(Request $request)
     {
         $user = $request->user();
         
-        // Check if user is a security guard or student
+        // Check if user is an admin
+        if ($user instanceof \App\Models\Admin) {
+            // Return admin profile wrapped in 'student' key for backward compatibility
+            return response()->json([
+                'student' => $user
+            ]);
+        }
+        
+        // Check if user is a security guard
         if ($user instanceof \App\Models\SecurityGuard) {
             // Return security guard profile wrapped in 'student' key for backward compatibility
             return response()->json([
@@ -103,7 +114,7 @@ class AuthController extends Controller
         
         // Otherwise, treat as student
         $student = $this->authService->getProfile($user);
-        // Return student wrapped in 'student' key for consistency with security guard response
+        // Return student wrapped in 'student' key for consistency with other user types
         return response()->json([
             'student' => $student
         ]);
@@ -118,6 +129,7 @@ class AuthController extends Controller
             $validated = $request->validate([
                 'name' => 'sometimes|string|max:255',
                 'phone' => 'sometimes|nullable|string|max:20',
+                'password' => 'sometimes|string|min:6',
             ]);
 
             $user = $request->user();
@@ -125,6 +137,7 @@ class AuthController extends Controller
             // Check if user is a security guard
             if ($user instanceof \App\Models\SecurityGuard) {
                 // Update security guard profile
+                // Password will be automatically hashed by the model's setPasswordAttribute mutator
                 $user->update($validated);
                 return response()->json([
                     'message' => 'Profile updated successfully',
@@ -134,7 +147,9 @@ class AuthController extends Controller
             
             // Otherwise, treat as student
             $studentService = app(\App\Services\StudentService::class);
-            $updatedStudent = $studentService->updateProfile($user->id, $validated);
+            $studentId = $user->student_id ?? $user->id; // Support both for backward compatibility
+            // Password will be automatically hashed by the model's setPasswordAttribute mutator
+            $updatedStudent = $studentService->updateProfile($studentId, $validated);
             
             if (!$updatedStudent) {
                 return response()->json([

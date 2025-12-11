@@ -211,11 +211,19 @@ export default function Landing() {
     setLoading(true);
 
     try {
+      // Add timeout to prevent hanging
+      const timeoutPromise = new Promise((_, reject) => 
+        setTimeout(() => reject(new Error('Request timeout. Please check your connection and try again.')), 25000)
+      );
+      
       if (isLogin) {
-        const result = await authService.login({
-          id: formData.id,
-          password: formData.password,
-        }, rememberMe);
+        const result = await Promise.race([
+          authService.login({
+            id: formData.id,
+            password: formData.password,
+          }, rememberMe),
+          timeoutPromise
+        ]);
         setMessage('✅ Login successful!');
         
         // Get user_type from result or storage
@@ -232,16 +240,19 @@ export default function Landing() {
           return;
         }
 
-        const result = await authService.register({
-          id: formData.id,
-          name: formData.name,
-          email: formData.email,
-          course_id: formData.course_id,
-          phone: formData.phone,
-          year_of_study: formData.year_of_study ? parseInt(formData.year_of_study) : null,
-          password: formData.password,
-          password_confirmation: formData.password_confirmation,
-        });
+        const result = await Promise.race([
+          authService.register({
+            id: formData.id,
+            name: formData.name,
+            email: formData.email,
+            course_id: formData.course_id,
+            phone: formData.phone,
+            year_of_study: formData.year_of_study ? parseInt(formData.year_of_study) : null,
+            password: formData.password,
+            password_confirmation: formData.password_confirmation,
+          }),
+          timeoutPromise
+        ]);
         setMessage('✅ Registered successfully!');
         
         setTimeout(() => {
@@ -263,7 +274,9 @@ export default function Landing() {
       console.error('Login/Register error:', err);
       let errorMessage = 'Operation failed';
       
-      if (err.response?.data) {
+      if (err.message === 'Request timeout. Please check your connection and try again.') {
+        errorMessage = err.message;
+      } else if (err.response?.data) {
         if (err.response.data.errors) {
           const errorFields = Object.keys(err.response.data.errors);
           if (errorFields.length > 0) {

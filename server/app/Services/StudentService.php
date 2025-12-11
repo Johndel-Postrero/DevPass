@@ -26,7 +26,8 @@ class StudentService
             ->get();
         
         // Optimize: Fetch all active tokens in a single query
-        $studentIds = $students->pluck('id')->toArray();
+        // Use student_id as primary key per database diagram
+        $studentIds = $students->pluck('student_id')->toArray();
         $activeTokenStudentIds = PersonalAccessToken::where('tokenable_type', Student::class)
             ->whereIn('tokenable_id', $studentIds)
             ->where(function($query) {
@@ -40,7 +41,9 @@ class StudentService
         // Add device counts and login status for each student
         return $students->map(function ($student) use ($activeTokenStudentIds) {
             // Check if student has active tokens (from pre-fetched list)
-            $hasActiveTokens = in_array($student->id, $activeTokenStudentIds);
+            // Use student_id as primary key per database diagram
+            $studentId = $student->student_id ?? $student->id;
+            $hasActiveTokens = in_array($studentId, $activeTokenStudentIds);
             
             // Determine student status based on login status
             // If logged in: active, if logged out: inactive
@@ -98,9 +101,10 @@ class StudentService
         }
 
         // Only allow updating specific fields
-        $allowedFields = ['name', 'phone'];
+        $allowedFields = ['name', 'phone', 'password'];
         $updateData = array_intersect_key($data, array_flip($allowedFields));
         
+        // Password will be automatically hashed by the model's setPasswordAttribute mutator
         $student->update($updateData);
         return $student->fresh();
     }

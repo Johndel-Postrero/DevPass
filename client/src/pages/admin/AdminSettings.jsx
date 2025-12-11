@@ -95,6 +95,8 @@ export default function AdminSettings({ darkMode = true, onClose, adminData = {}
   const [showDeleteSecurityConfirm, setShowDeleteSecurityConfirm] = useState(false);
   const [showEditPassword, setShowEditPassword] = useState(false);
   const [showEditConfirmPassword, setShowEditConfirmPassword] = useState(false);
+  const [showEditStudentPassword, setShowEditStudentPassword] = useState(false);
+  const [showEditStudentConfirmPassword, setShowEditStudentConfirmPassword] = useState(false);
   
   // Cache flags to prevent unnecessary refetches
   const [usersLoaded, setUsersLoaded] = useState(false);
@@ -206,9 +208,12 @@ export default function AdminSettings({ darkMode = true, onClose, adminData = {}
   };
 
   useEffect(() => {
-    if (activeTab === 'users') {
+    // Fetch users data when profile or users tab is active (for counts display)
+    if (activeTab === 'users' || activeTab === 'profile') {
       fetchUsers();
-      fetchCourses();
+      if (activeTab === 'users') {
+        fetchCourses();
+      }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeTab]);
@@ -232,13 +237,24 @@ export default function AdminSettings({ darkMode = true, onClose, adminData = {}
 
     try {
       setLoading(true);
-      await api.post('/security-guards', {
-        guard_id: newSecurity.employeeId,
-        name: newSecurity.name,
-        email: newSecurity.email,
-        phone: newSecurity.phone,
-        password: newSecurity.password,
-      });
+      setErrors({}); // Clear previous errors
+      
+      // Add timeout to prevent hanging
+      const timeoutPromise = new Promise((_, reject) => 
+        setTimeout(() => reject(new Error('Request timeout. Please try again.')), 25000)
+      );
+      
+      await Promise.race([
+        api.post('/security-guards', {
+          guard_id: newSecurity.employeeId,
+          name: newSecurity.name,
+          email: newSecurity.email,
+          phone: newSecurity.phone,
+          password: newSecurity.password,
+        }),
+        timeoutPromise
+      ]);
+      
       setShowAddSecurity(false);
       setNewSecurity({
         name: '',
@@ -254,9 +270,32 @@ export default function AdminSettings({ darkMode = true, onClose, adminData = {}
       setShowConfirmPassword(false);
       setErrors({});
       fetchUsers(true); // Force refresh after adding
+      
+      setNotification({
+        type: 'success',
+        title: 'Success',
+        message: 'Security personnel added successfully',
+        autoClose: true,
+      });
     } catch (error) {
       console.error('Error adding security:', error);
-      const errorMessage = error.response?.data?.message || 'Failed to add security personnel';
+      let errorMessage = 'Failed to add security personnel';
+      
+      if (error.message === 'Request timeout. Please try again.') {
+        errorMessage = error.message;
+      } else if (error.response?.data) {
+        if (error.response.data.errors) {
+          const errorFields = Object.keys(error.response.data.errors);
+          if (errorFields.length > 0) {
+            errorMessage = error.response.data.errors[errorFields[0]][0];
+          }
+        } else if (error.response.data.message) {
+          errorMessage = error.response.data.message;
+        }
+      } else if (error.message) {
+        errorMessage = error.message;
+      }
+      
       setNotification({
         type: 'error',
         title: 'Add Failed',
@@ -361,15 +400,24 @@ export default function AdminSettings({ darkMode = true, onClose, adminData = {}
 
   const handleSaveProfile = async () => {
     try {
+      setLoading(true);
       const updateData = {
         name: profileData.name,
         phone: profileData.phone || null,
       };
       
-      const response = await api.put('/auth/profile', updateData);
+      // Add timeout to prevent hanging
+      const timeoutPromise = new Promise((_, reject) => 
+        setTimeout(() => reject(new Error('Request timeout. Please try again.')), 25000)
+      );
+      
+      const response = await Promise.race([
+        api.put('/auth/profile', updateData),
+        timeoutPromise
+      ]);
       
       if (response && response.data && response.data.student) {
-      setEditingProfile(false);
+        setEditingProfile(false);
         setNotification({
           type: 'success',
           title: 'Profile Updated',
@@ -384,13 +432,24 @@ export default function AdminSettings({ darkMode = true, onClose, adminData = {}
       }
     } catch (error) {
       console.error('Error updating profile:', error);
-      const errorMessage = error.response?.data?.message || error.message || 'Failed to update profile';
+      let errorMessage = 'Failed to update profile';
+      
+      if (error.message === 'Request timeout. Please try again.') {
+        errorMessage = error.message;
+      } else if (error.response?.data?.message) {
+        errorMessage = error.response.data.message;
+      } else if (error.message) {
+        errorMessage = error.message;
+      }
+      
       setNotification({
         type: 'error',
         title: 'Update Failed',
         message: errorMessage,
         autoClose: true,
       });
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -985,7 +1044,9 @@ export default function AdminSettings({ darkMode = true, onClose, adminData = {}
                                       email: studentEmail,
                                       phone: student.phone || '',
                                       course_id: student.course_id || student.course?.course_id || '',
-                                      year_of_study: student.year_of_study || ''
+                                      year_of_study: student.year_of_study || '',
+                                      password: '',
+                                      confirmPassword: ''
                                     });
                                     setShowEditStudent(true);
                                   }}
@@ -1306,7 +1367,9 @@ export default function AdminSettings({ darkMode = true, onClose, adminData = {}
                       email: selectedStudent.email || '',
                       phone: selectedStudent.phone || '',
                       course_id: selectedStudent.course_id || selectedStudent.course?.course_id || '',
-                      year_of_study: selectedStudent.year_of_study || ''
+                      year_of_study: selectedStudent.year_of_study || '',
+                      password: '',
+                      confirmPassword: ''
                     });
                     setShowEditStudent(true);
                   }}
@@ -1440,26 +1503,107 @@ export default function AdminSettings({ darkMode = true, onClose, adminData = {}
                     placeholder="Enter year of study"
                   />
                 </div>
+
+                <div>
+                  <label className={`block text-sm font-semibold ${textPrimary} mb-2`}>
+                    Password
+                  </label>
+                  <div className="relative">
+                    <input
+                      type={showEditStudentPassword ? "text" : "password"}
+                      value={editingStudent.password || ''}
+                      onChange={(e) => setEditingStudent({...editingStudent, password: e.target.value})}
+                      className={`w-full px-4 py-3 pr-12 rounded-lg border ${inputBg} ${textPrimary} focus:outline-none focus:ring-2 focus:ring-blue-500 ${errors.password ? 'border-red-500' : ''}`}
+                      placeholder="Enter new password (leave blank to keep current)"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowEditStudentPassword(!showEditStudentPassword)}
+                      className={`absolute right-3 top-1/2 -translate-y-1/2 p-1 rounded-lg transition-all ${darkMode ? 'hover:bg-white/10 text-gray-400' : 'hover:bg-gray-100 text-gray-600'}`}
+                    >
+                      {showEditStudentPassword ? (
+                        <EyeOff className="w-5 h-5" />
+                      ) : (
+                        <Eye className="w-5 h-5" />
+                      )}
+                    </button>
+                  </div>
+                  {errors.password && <p className="text-red-500 text-xs mt-1">{errors.password}</p>}
+                  <p className={`text-xs mt-1 ${textSecondary}`}>
+                    Leave blank to keep current password
+                  </p>
+                </div>
+
+                <div>
+                  <label className={`block text-sm font-semibold ${textPrimary} mb-2`}>
+                    Confirm Password
+                  </label>
+                  <div className="relative">
+                    <input
+                      type={showEditStudentConfirmPassword ? "text" : "password"}
+                      value={editingStudent.confirmPassword || ''}
+                      onChange={(e) => setEditingStudent({...editingStudent, confirmPassword: e.target.value})}
+                      className={`w-full px-4 py-3 pr-12 rounded-lg border ${inputBg} ${textPrimary} focus:outline-none focus:ring-2 focus:ring-blue-500 ${errors.confirmPassword ? 'border-red-500' : ''}`}
+                      placeholder="Confirm new password"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowEditStudentConfirmPassword(!showEditStudentConfirmPassword)}
+                      className={`absolute right-3 top-1/2 -translate-y-1/2 p-1 rounded-lg transition-all ${darkMode ? 'hover:bg-white/10 text-gray-400' : 'hover:bg-gray-100 text-gray-600'}`}
+                    >
+                      {showEditStudentConfirmPassword ? (
+                        <EyeOff className="w-5 h-5" />
+                      ) : (
+                        <Eye className="w-5 h-5" />
+                      )}
+                    </button>
+                  </div>
+                  {errors.confirmPassword && <p className="text-red-500 text-xs mt-1">{errors.confirmPassword}</p>}
+                </div>
               </div>
 
               <div className="flex gap-3 mt-6">
                 <button
                   onClick={async () => {
+                    // Validate password if provided
+                    const newErrors = {};
+                    if (editingStudent.password || editingStudent.confirmPassword) {
+                      if (!editingStudent.password || editingStudent.password.trim().length < 6) {
+                        newErrors.password = 'Password must be at least 6 characters';
+                      }
+                      if (editingStudent.password !== editingStudent.confirmPassword) {
+                        newErrors.confirmPassword = 'Passwords do not match';
+                      }
+                    }
+                    
+                    if (Object.keys(newErrors).length > 0) {
+                      setErrors(newErrors);
+                      return;
+                    }
+                    
                     try {
                       setLoading(true);
-                      await api.put(`/students/${editingStudent.id}`, {
+                      const updateData = {
                         name: editingStudent.name,
                         email: editingStudent.email,
                         phone: editingStudent.phone,
                         course_id: editingStudent.course_id,
                         year_of_study: editingStudent.year_of_study ? parseInt(editingStudent.year_of_study) : null
-                      });
+                      };
+                      
+                      // Only include password if it's provided
+                      if (editingStudent.password && editingStudent.password.trim()) {
+                        updateData.password = editingStudent.password;
+                      }
+                      
+                      await api.put(`/students/${editingStudent.id}`, updateData);
                       setNotification({
                         type: 'success',
                         message: 'Student information updated successfully!'
                       });
                       setShowEditStudent(false);
                       setEditingStudent(null);
+                      setErrors({});
                       fetchUsers(true); // Force refresh after update
                     } catch (error) {
                       setNotification({

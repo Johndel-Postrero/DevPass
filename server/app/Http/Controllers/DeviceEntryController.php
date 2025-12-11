@@ -58,27 +58,68 @@ class DeviceEntryController extends Controller
             ? $this->entryLogService->getEntryLogsByGate($gate->gate_id, $limit, $securityGuardId)
             : $this->entryLogService->getAllEntryLogs($limit, $securityGuardId);
         
+        // Relationships are already eager loaded in EntryLogService, no need to load again
+        
         $formatted = $entries->map(function ($entry) {
-            $device = $entry->qrCode->device ?? null;
-            $student = $device->student ?? null;
+            // Safely get device and student with proper null checking
+            $device = null;
+            $student = null;
+            
+            try {
+                // Check if qrCode relationship exists and is loaded
+                if ($entry->relationLoaded('qrCode') && $entry->qrCode) {
+                    // Check if device relationship exists and is loaded
+                    if ($entry->qrCode->relationLoaded('device') && $entry->qrCode->device) {
+                        $device = $entry->qrCode->device;
+                        // Check if student relationship exists and is loaded
+                        if ($device->relationLoaded('student') && $device->student) {
+                            $student = $device->student;
+                        }
+                    }
+                }
+            } catch (\Exception $e) {
+                // Log error but don't break the entire response
+                \Log::warning('Error loading device/student for entry log: ' . $entry->log_id, [
+                    'error' => $e->getMessage(),
+                    'entry_id' => $entry->log_id,
+                    'trace' => $e->getTraceAsString()
+                ]);
+            }
+            
+            // Safely get gate and security guard
+            $gate = null;
+            $securityGuard = null;
+            
+            try {
+                if ($entry->relationLoaded('gate') && $entry->gate) {
+                    $gate = $entry->gate;
+                }
+                if ($entry->relationLoaded('securityGuard') && $entry->securityGuard) {
+                    $securityGuard = $entry->securityGuard;
+                }
+            } catch (\Exception $e) {
+                \Log::warning('Error loading gate/securityGuard for entry log: ' . $entry->log_id, [
+                    'error' => $e->getMessage()
+                ]);
+            }
             
             return [
                 'id' => $entry->log_id,
-                'studentName' => $student->name ?? 'Unknown',
-                'studentId' => $student->id ?? 'N/A',
+                'studentName' => ($student && isset($student->name)) ? $student->name : 'Unknown',
+                'studentId' => ($student && isset($student->student_id)) ? $student->student_id : (($student && isset($student->id)) ? $student->id : 'N/A'),
                 // 'studentDepartment' => $student->department ?? 'N/A',
-                'studentCourse' => $student->course ?? 'N/A',
+                'studentCourse' => ($student && isset($student->course)) ? $student->course : 'N/A',
                 'device' => $device ? ($device->brand . ' ' . $device->model) : 'N/A',
-                'deviceType' => $device->device_type ?? 'N/A',
-                'deviceSerial' => $device->serial_number ?? 'N/A',
-                'gate' => $entry->gate->gate_name ?? 'N/A',
-                'gateLocation' => $entry->gate->location ?? 'N/A',
+                'deviceType' => 'Laptop', // Per database diagram: system handles laptops only (device_type removed)
+                'deviceSerial' => ($device && isset($device->serial_number)) ? $device->serial_number : 'N/A',
+                'gate' => ($gate && isset($gate->gate_name)) ? $gate->gate_name : 'N/A',
+                'gateLocation' => ($gate && isset($gate->location)) ? $gate->location : 'N/A',
                 'time' => $entry->scan_timestamp ? $entry->scan_timestamp->setTimezone(config('app.timezone'))->format('h:i A') : 'N/A',
                 'date' => $entry->scan_timestamp ? $entry->scan_timestamp->setTimezone(config('app.timezone'))->format('M d, Y') : 'N/A',
                 'fullTimestamp' => $entry->scan_timestamp ? $entry->scan_timestamp->setTimezone(config('app.timezone'))->format('M d, Y h:i A') : 'N/A',
-                'status' => $entry->status,
-                'securityGuard' => $entry->securityGuard->name ?? 'Unknown',
-                'securityGuardId' => $entry->securityGuard->guard_id ?? 'N/A',
+                'status' => $entry->status ?? 'unknown',
+                'securityGuard' => ($securityGuard && isset($securityGuard->name)) ? $securityGuard->name : 'Unknown',
+                'securityGuardId' => ($securityGuard && isset($securityGuard->guard_id)) ? $securityGuard->guard_id : 'N/A',
             ];
         });
         
@@ -180,13 +221,13 @@ class DeviceEntryController extends Controller
                 'message' => 'QR code is valid',
                 'student_data' => [
                     'student_name' => $student->name,
-                    'student_id' => $student->id,
+                    'student_id' => $student->student_id ?? $student->id,
                     'student_course' => $student->course,
                 ],
                 'device' => [
                     'brand' => $device->brand,
                     'model' => $device->model,
-                    'device_type' => $device->device_type,
+                    'device_type' => 'Laptop', // Per database diagram: system handles laptops only
                 ],
             ]);
         } catch (\Illuminate\Validation\ValidationException $e) {
@@ -374,18 +415,18 @@ class DeviceEntryController extends Controller
             'message' => 'Device verified successfully',
             'student_data' => $student ? [
                 'student_name' => $student->name,
-                'student_id' => $student->id,
+                'student_id' => $student->student_id ?? $student->id,
                 // 'student_department' => $student->department,
                 'student_course' => $student->course,
             ] : null,
             'device' => $device ? [
                 'brand' => $device->brand,
                 'model' => $device->model,
-                'device_type' => $device->device_type,
+                'device_type' => 'Laptop', // Per database diagram: system handles laptops only
             ] : null,
             'data' => [
                 'name' => $student->name ?? 'Unknown',
-                'studentId' => $student->id ?? 'N/A',
+                'studentId' => $student->student_id ?? $student->id ?? 'N/A',
                 'device' => $device ? ($device->brand . ' ' . $device->model) : 'N/A',
                 'expiryDate' => $qrCode->expires_at ? $qrCode->expires_at->setTimezone(config('app.timezone'))->format('Y-m-d') : null,
             ],
@@ -522,13 +563,16 @@ class DeviceEntryController extends Controller
         $user = Auth::user();
         $limit = $request->query('limit', 20);
         
-        if (!$user || !isset($user->id)) {
+        if (!$user || (!isset($user->student_id) && !isset($user->id))) {
             return response()->json([
                 'message' => 'Unauthorized'
             ], 401);
         }
         
-        $entries = $this->entryLogService->getEntryLogsByStudent($user->id, $limit);
+        $studentId = $user->student_id ?? $user->id;
+        $entries = $this->entryLogService->getEntryLogsByStudent($studentId, $limit);
+        
+        // Relationships are already eager loaded in EntryLogService
         
         $formatted = $entries->map(function ($entry) {
             $device = $entry->qrCode->device ?? null;
@@ -544,10 +588,10 @@ class DeviceEntryController extends Controller
                 'date' => $entry->scan_timestamp ? $entry->scan_timestamp->setTimezone(config('app.timezone'))->format('M d, Y') : 'N/A',
                 'fullTimestamp' => $entry->scan_timestamp ? $entry->scan_timestamp->setTimezone(config('app.timezone'))->format('M d, Y h:i A') : 'N/A',
                 'device' => $device ? ($device->brand . ' ' . $device->model) : 'Unknown Device',
-                'deviceType' => $device->device_type ?? 'N/A',
+                'deviceType' => 'Laptop', // Per database diagram: system handles laptops only
                 'deviceSerial' => $device->serial_number ?? 'N/A',
                 'studentName' => $student->name ?? 'Unknown',
-                'studentId' => $student->id ?? 'N/A',
+                'studentId' => $student->student_id ?? $student->id ?? 'N/A',
                 // 'studentDepartment' => $student->department ?? 'N/A',
                 'studentCourse' => $student->course ?? 'N/A',
                 'status' => $entry->status, // 'success' for approved, 'failed' for denied

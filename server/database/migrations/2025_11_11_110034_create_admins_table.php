@@ -14,9 +14,9 @@ return new class extends Migration
         if (!Schema::hasTable('admins')) {
             Schema::create('admins', function (Blueprint $table) {
                 $table->id('admin_id');
-                $table->string('username', 50);
-                $table->string('password', 250);
-                $table->string('email', 158);
+                $table->string('username', 50)->unique(); // Per database diagram: unique
+                $table->string('password', 255); // Per database diagram: varchar(255)
+                $table->string('email', 150)->unique(); // Per database diagram: varchar(150) unique
                 $table->timestamps();
             });
         }

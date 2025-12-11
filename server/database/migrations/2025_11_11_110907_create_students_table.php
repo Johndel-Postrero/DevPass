@@ -13,18 +13,16 @@ return new class extends Migration
     {
         if (!Schema::hasTable('students')) {
             Schema::create('students', function (Blueprint $table) {
-                $table->string('id')->primary(); // Student ID (e.g., STU001) - must be unique and indexed for foreign key
-                $table->string('name');
-                $table->string('email')->unique();
-                $table->string('phone')->nullable();
-                // $table->string('department_id');
-                $table->string('course_id');
+                $table->string('student_id', 20)->primary(); // Student ID (e.g., STU001) - per database diagram
+                $table->string('name', 100);
+                $table->string('email', 150)->unique();
+                $table->string('phone', 15)->nullable();
+                $table->integer('course_id'); // Changed to integer per database diagram
                 $table->integer('year_of_study')->nullable();
-                $table->string('password'); // Encrypted password
+                $table->string('password', 255); // Encrypted password
                 $table->timestamps(); // created_at and updated_at
 
-            // $table->foreign('department_id')->references('department_id')->on('department')->onDelete('cascade');
-            $table->foreign('course_id')->references('course_id')->on('course')->onDelete('cascade');
+                $table->foreign('course_id')->references('course_id')->on('course')->onDelete('cascade');
             });
         }
     }

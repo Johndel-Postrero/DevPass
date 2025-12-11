@@ -12,35 +12,27 @@ return new class extends Migration
      */
     public function up(): void
     {
-        // NOTE: These columns are now included in the original create_laptop_table_erd.php migration
-        // This migration is kept for backward compatibility with existing databases
+        // NOTE: This migration is kept for backward compatibility with existing databases
+        // Extra fields (device_type, model_number, mac_address) are NOT in the database diagram
+        // and should not be added to new installations
+        // This migration now does nothing for new installations to match the diagram
         if (Schema::hasTable('devices')) {
+            // Only add columns if they don't exist (for existing databases)
+            // New installations should not have these fields
+            // Commented out to match database diagram
+            /*
             Schema::table('devices', function (Blueprint $table) {
-                // Add device_type column (per data dictionary)
                 if (!Schema::hasColumn('devices', 'device_type')) {
                     $table->string('device_type', 50)->nullable()->after('student_id');
                 }
-                
-                // Add model_number column (per data dictionary)
                 if (!Schema::hasColumn('devices', 'model_number')) {
                     $table->string('model_number', 100)->nullable()->after('model');
                 }
-                
-                // Add mac_address column (per data dictionary - should be in devices, not laptop_specifications)
                 if (!Schema::hasColumn('devices', 'mac_address')) {
                     $table->string('mac_address', 17)->nullable()->after('serial_number');
                 }
             });
-            
-            // Migrate mac_address data from laptop_specifications to devices if it exists there
-            if (Schema::hasTable('laptop_specifications') && Schema::hasColumn('laptop_specifications', 'mac_address')) {
-                DB::statement('
-                    UPDATE devices d
-                    INNER JOIN laptop_specifications ls ON d.model = ls.model
-                    SET d.mac_address = ls.mac_address
-                    WHERE ls.mac_address IS NOT NULL AND d.mac_address IS NULL
-                ');
-            }
+            */
         }
     }
 

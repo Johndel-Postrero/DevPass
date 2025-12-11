@@ -15,20 +15,25 @@ return new class extends Migration
         if (!Schema::hasTable('entry_log')) {
             Schema::create('entry_log', function (Blueprint $table) {
                 $table->id('log_id');
-                $table->unsignedBigInteger('qr_id'); // Fixed: Use PK instead of qr_code_hash for proper normalization
-                $table->string('qr_code_hash', 255)->nullable(); // Keep for backward compatibility/reference
+                $table->unsignedBigInteger('qr_id'); // Use PK for proper normalization
+                $table->string('qr_code_hash', 255); // Per database diagram: not null (for reference)
                 $table->unsignedBigInteger('gate_id');
                 $table->string('security_guard_id', 20);
-                $table->timestamp('scan_timestamp')->nullable();
+                $table->timestamp('scan_timestamp')->useCurrent(); // Per database diagram: default now()
                 $table->string('status', 20)->default('success');
                 $table->timestamps();
                 
-                // Use qr_id (PK) for foreign key - proper normalization
+                // Foreign keys
                 $table->foreign('qr_id')->references('qr_id')->on('qr_codes')->onDelete('cascade');
                 $table->foreign('gate_id')->references('gate_id')->on('gates')->onDelete('cascade');
                 $table->foreign('security_guard_id')->references('guard_id')->on('security_guards')->onDelete('cascade');
+                
+                // Per database diagram: indexes on qr_code_hash, gate_id, security_guard_id, scan_timestamp
+                $table->index('qr_code_hash');
+                $table->index('gate_id');
+                $table->index('security_guard_id');
                 $table->index('scan_timestamp');
-                $table->index('status');
+                $table->index('status'); // Additional index for filtering
             });
         }
     }

@@ -142,6 +142,7 @@ export default function DeviceEditModal({ darkMode, onClose, device, onSuccess }
         <Notification
           notification={notification}
           onClose={() => setNotification(null)}
+          darkMode={darkMode}
         />
       )}
 

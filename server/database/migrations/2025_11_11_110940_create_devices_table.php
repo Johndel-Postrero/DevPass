@@ -16,23 +16,21 @@ return new class extends Migration
             Schema::create('devices', function (Blueprint $table) {
                 $table->id('laptop_id');
                 $table->string('student_id', 20);
-                $table->string('device_type', 50)->nullable(); // Added per data dictionary
-                $table->string('model', 100); // Removed unique constraint (handled by separate migration)
-                $table->string('model_number', 100)->nullable(); // Added per data dictionary
-                $table->string('serial_number', 100)->nullable();
-                $table->string('mac_address', 17)->nullable(); // Added per data dictionary
-                $table->string('brand', 50)->nullable();
-                $table->timestamp('registration_date')->nullable();
+                $table->string('model', 100); // Per database diagram: string (NOT unique - multiple devices can share same model)
+                $table->string('serial_number', 100)->nullable(); // Unique constraint added in separate migration
+                $table->string('brand', 50); // Per database diagram: varchar(50) not null
+                $table->timestamp('registration_date')->useCurrent(); // Per database diagram: default now()
                 $table->string('registration_status', 20)->default('pending');
                 $table->unsignedBigInteger('approved_by')->nullable();
                 $table->timestamp('approved_at')->nullable();
-                $table->json('original_values')->nullable(); // For rejection rollback
-                $table->string('last_action', 20)->nullable(); // Track last action: 'approved', 'rejected', 'reverted'
                 $table->timestamps();
-                $table->softDeletes(); // Soft delete support
                 
-                $table->foreign('student_id')->references('id')->on('students')->onDelete('cascade');
+                $table->foreign('student_id')->references('student_id')->on('students')->onDelete('cascade');
                 $table->foreign('approved_by')->references('admin_id')->on('admins')->onDelete('set null');
+                
+                // Foreign key: model references laptop_specifications.model (per database diagram)
+                // This allows auto-filling specifications when model is detected
+                // Note: FK will be added after laptop_specifications table is created
             });
         }
     }

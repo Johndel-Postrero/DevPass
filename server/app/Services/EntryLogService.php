@@ -54,7 +54,7 @@ class EntryLogService
             ->get();
     }
 
-    public function getEntryLogsByDate($date, $gateId = null)
+    public function getEntryLogsByDate($date, $gateId = null, $limit = 100)
     {
         $query = EntryLog::whereDate('scan_timestamp', $date);
         
@@ -62,7 +62,10 @@ class EntryLogService
             $query->where('gate_id', $gateId);
         }
         
-        return $query->get();
+        // Add limit to prevent loading all logs for a date (performance optimization)
+        return $query->orderBy('scan_timestamp', 'desc')
+            ->limit($limit)
+            ->get();
     }
 
     public function createEntryLog(array $data)

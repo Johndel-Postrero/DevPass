@@ -12,72 +12,132 @@ return new class extends Migration
      */
     public function up(): void
     {
+        // This migration ensures model FK relationship per database diagram
+        // devices.model FK references laptop_specifications.model (reverse of what was attempted)
+        
+        // First, ensure laptop_specifications.model is unique (required for FK reference)
         if (Schema::hasTable('laptop_specifications')) {
-            // Drop the old foreign key constraint on model
-            try {
-                // Get foreign key constraint name
-                $foreignKeys = DB::select("
+            // Drop laptop_id column and FK if they exist (old approach)
+            if (Schema::hasColumn('laptop_specifications', 'laptop_id')) {
+                try {
+                    // Drop FK first
+                    $foreignKeys = DB::select("
+                        SELECT CONSTRAINT_NAME 
+                        FROM information_schema.KEY_COLUMN_USAGE 
+                        WHERE TABLE_SCHEMA = DATABASE() 
+                        AND TABLE_NAME = 'laptop_specifications' 
+                        AND COLUMN_NAME = 'laptop_id'
+                        AND REFERENCED_TABLE_NAME = 'devices'
+                    ");
+                    
+                    foreach ($foreignKeys as $fk) {
+                        try {
+                            DB::statement("ALTER TABLE laptop_specifications DROP FOREIGN KEY `{$fk->CONSTRAINT_NAME}`");
+                        } catch (\Exception $e) {
+                            // Continue
+                        }
+                    }
+                    
+                    // Drop unique constraint on laptop_id
+                    $uniqueConstraints = DB::select("
+                        SELECT CONSTRAINT_NAME 
+                        FROM information_schema.TABLE_CONSTRAINTS 
+                        WHERE TABLE_SCHEMA = DATABASE() 
+                        AND TABLE_NAME = 'laptop_specifications' 
+                        AND CONSTRAINT_TYPE = 'UNIQUE'
+                        AND CONSTRAINT_NAME IN (
+                            SELECT CONSTRAINT_NAME 
+                            FROM information_schema.KEY_COLUMN_USAGE 
+                            WHERE TABLE_SCHEMA = DATABASE() 
+                            AND TABLE_NAME = 'laptop_specifications' 
+                            AND COLUMN_NAME = 'laptop_id'
+                        )
+                    ");
+                    
+                    foreach ($uniqueConstraints as $uc) {
+                        try {
+                            DB::statement("ALTER TABLE laptop_specifications DROP INDEX `{$uc->CONSTRAINT_NAME}`");
+                        } catch (\Exception $e) {
+                            // Continue
+                        }
+                    }
+                    
+                    // Drop laptop_id column
+                    Schema::table('laptop_specifications', function (Blueprint $table) {
+                        $table->dropColumn('laptop_id');
+                    });
+                } catch (\Exception $e) {
+                    // Continue if errors
+                }
+            }
+            
+            // Ensure model column exists and is NOT NULL and UNIQUE
+            if (!Schema::hasColumn('laptop_specifications', 'model')) {
+                Schema::table('laptop_specifications', function (Blueprint $table) {
+                    $table->string('model', 100)->unique()->after('spec_id');
+                });
+            } else {
+                // Make model NOT NULL and ensure it's unique
+                Schema::table('laptop_specifications', function (Blueprint $table) {
+                    $table->string('model', 100)->nullable(false)->change();
+                });
+                
+                // Add unique constraint if not exists
+                $existingModelUnique = DB::select("
                     SELECT CONSTRAINT_NAME 
-                    FROM information_schema.KEY_COLUMN_USAGE 
+                    FROM information_schema.TABLE_CONSTRAINTS 
                     WHERE TABLE_SCHEMA = DATABASE() 
                     AND TABLE_NAME = 'laptop_specifications' 
-                    AND COLUMN_NAME = 'model'
-                    AND REFERENCED_TABLE_NAME = 'devices'
+                    AND CONSTRAINT_TYPE = 'UNIQUE'
+                    AND CONSTRAINT_NAME IN (
+                        SELECT CONSTRAINT_NAME 
+                        FROM information_schema.KEY_COLUMN_USAGE 
+                        WHERE TABLE_SCHEMA = DATABASE() 
+                        AND TABLE_NAME = 'laptop_specifications' 
+                        AND COLUMN_NAME = 'model'
+                    )
                 ");
                 
-                foreach ($foreignKeys as $fk) {
+                if (empty($existingModelUnique)) {
+                    Schema::table('laptop_specifications', function (Blueprint $table) {
+                        $table->unique('model', 'laptop_specifications_model_unique');
+                    });
+                }
+            }
+        }
+        
+        // Now add FK in devices table: devices.model references laptop_specifications.model
+        if (Schema::hasTable('devices') && Schema::hasTable('laptop_specifications')) {
+            // Remove unique constraint from devices.model if it exists (multiple devices can share model)
+            try {
+                $indexes = DB::select("SHOW INDEX FROM devices WHERE Column_name = 'model' AND Non_unique = 0");
+                foreach ($indexes as $index) {
                     try {
-                        DB::statement("ALTER TABLE laptop_specifications DROP FOREIGN KEY `{$fk->CONSTRAINT_NAME}`");
+                        DB::statement("ALTER TABLE devices DROP INDEX `{$index->Key_name}`");
                     } catch (\Exception $e) {
-                        // Continue if FK doesn't exist
+                        // Continue
                     }
                 }
             } catch (\Exception $e) {
-                // Continue if query fails
+                // Continue
             }
             
-            // Add laptop_id column if it doesn't exist
-            if (!Schema::hasColumn('laptop_specifications', 'laptop_id')) {
-                Schema::table('laptop_specifications', function (Blueprint $table) {
-                    $table->unsignedBigInteger('laptop_id')->nullable()->after('spec_id');
-                });
-                
-                // Migrate data: get laptop_id from devices table based on model
-                DB::statement('
-                    UPDATE laptop_specifications ls
-                    INNER JOIN devices d ON ls.model = d.model
-                    SET ls.laptop_id = d.laptop_id
-                    WHERE d.laptop_id IS NOT NULL
-                ');
-                
-                // Make laptop_id NOT NULL after data migration
-                Schema::table('laptop_specifications', function (Blueprint $table) {
-                    $table->unsignedBigInteger('laptop_id')->nullable(false)->change();
+            // Add FK: devices.model references laptop_specifications.model
+            $existingFK = DB::select("
+                SELECT CONSTRAINT_NAME 
+                FROM information_schema.KEY_COLUMN_USAGE 
+                WHERE TABLE_SCHEMA = DATABASE() 
+                AND TABLE_NAME = 'devices' 
+                AND COLUMN_NAME = 'model'
+                AND REFERENCED_TABLE_NAME = 'laptop_specifications'
+                AND REFERENCED_COLUMN_NAME = 'model'
+            ");
+            
+            if (empty($existingFK)) {
+                Schema::table('devices', function (Blueprint $table) {
+                    $table->foreign('model')->references('model')->on('laptop_specifications')->onDelete('restrict');
                 });
             }
-            
-            // Add foreign key constraint to laptop_id (PK)
-            Schema::table('laptop_specifications', function (Blueprint $table) {
-                try {
-                    $table->foreign('laptop_id')->references('laptop_id')->on('devices')->onDelete('cascade');
-                } catch (\Exception $e) {
-                    // FK might already exist
-                }
-            });
-            
-            // Add unique constraint on laptop_id (one-to-one relationship)
-            Schema::table('laptop_specifications', function (Blueprint $table) {
-                try {
-                    $table->unique('laptop_id');
-                } catch (\Exception $e) {
-                    // Unique constraint might already exist
-                }
-            });
-            
-            // Make model nullable (no longer used as FK, just for reference)
-            Schema::table('laptop_specifications', function (Blueprint $table) {
-                $table->string('model')->nullable()->change();
-            });
         }
     }
 
@@ -86,31 +146,37 @@ return new class extends Migration
      */
     public function down(): void
     {
+        // Drop FK from devices.model
+        if (Schema::hasTable('devices')) {
+            try {
+                $foreignKeys = DB::select("
+                    SELECT CONSTRAINT_NAME 
+                    FROM information_schema.KEY_COLUMN_USAGE 
+                    WHERE TABLE_SCHEMA = DATABASE() 
+                    AND TABLE_NAME = 'devices' 
+                    AND COLUMN_NAME = 'model'
+                    AND REFERENCED_TABLE_NAME = 'laptop_specifications'
+                ");
+                
+                foreach ($foreignKeys as $fk) {
+                    try {
+                        DB::statement("ALTER TABLE devices DROP FOREIGN KEY `{$fk->CONSTRAINT_NAME}`");
+                    } catch (\Exception $e) {
+                        // Continue
+                    }
+                }
+            } catch (\Exception $e) {
+                // Continue
+            }
+        }
+        
+        // Drop unique constraint from laptop_specifications.model
         if (Schema::hasTable('laptop_specifications')) {
-            Schema::table('laptop_specifications', function (Blueprint $table) {
-                // Drop new FK and unique constraint
-                try {
-                    $table->dropForeign(['laptop_id']);
-                } catch (\Exception $e) {
-                    // Continue
-                }
-                try {
-                    $table->dropUnique(['laptop_id']);
-                } catch (\Exception $e) {
-                    // Continue
-                }
-                
-                // Drop laptop_id column
-                if (Schema::hasColumn('laptop_specifications', 'laptop_id')) {
-                    $table->dropColumn('laptop_id');
-                }
-                
-                // Restore model as NOT NULL
-                $table->string('model')->nullable(false)->change();
-                
-                // Restore old FK (if needed)
-                // $table->foreign('model')->references('model')->on('devices')->onDelete('cascade');
-            });
+            try {
+                DB::statement("ALTER TABLE laptop_specifications DROP INDEX laptop_specifications_model_unique");
+            } catch (\Exception $e) {
+                // Continue
+            }
         }
     }
 };

@@ -2,7 +2,8 @@
 
 namespace Database\Seeders;
 
-use App\Models\Student;
+use App\Models\Admin;
+use App\Models\SecurityGuard;
 use Illuminate\Database\Console\Seeds\WithoutModelEvents;
 use Illuminate\Database\Seeder;
 
@@ -15,40 +16,42 @@ class DatabaseSeeder extends Seeder
      */
     public function run(): void
     {
-        // Create Admin Account
-        Student::firstOrCreate(
-            ['id' => '22222222'],
+        // Create Admin Account in admins table
+        Admin::firstOrCreate(
+            ['email' => 'admin@devpass.com'],
             [
-                'name' => 'Admin User',
+                'username' => 'admin',
                 'email' => 'admin@devpass.com',
-                'password' => 'admin123', // Will be auto-hashed by Student model
-                'course_id' => '1',
-                // 'department' => 'Administration',
-                'phone' => '1234567890',
+                'password' => 'admin123', // Will be auto-hashed by Admin model
             ]
         );
 
-        // Create Security Personnel Account
-        Student::firstOrCreate(
-            ['id' => '33333333'],
+        // Create Security Personnel Account in security_guards table
+        SecurityGuard::firstOrCreate(
+            ['guard_id' => '33333333'],
             [
+                'guard_id' => '33333333',
                 'name' => 'Security Personnel',
                 'email' => 'security@devpass.com',
-                'password' => 'security123', // Will be auto-hashed by Student model
-                'course_id' => '2',
-                // 'department' => 'Security',
+                'password' => 'security123', // Will be auto-hashed by SecurityGuard model
                 'phone' => '0987654321',
             ]
         );
 
-        echo "✅ Admin account created:\n";
-        echo "   ID: 2222222\n";
+        // Note: Test student account creation removed to avoid database schema conflicts
+        // The Student model expects 'student_id' but database may still have 'id'
+        // Students can be created through registration or manually after schema is updated
+
+        echo "✅ Admin account created in admins table:\n";
+        echo "   Username: admin\n";
         echo "   Email: admin@devpass.com\n";
-        echo "   Password: admin123\n\n";
+        echo "   Password: admin123\n";
+        echo "   Login with: username 'admin' or email 'admin@devpass.com'\n\n";
         
-        echo "✅ Security account created:\n";
-        echo "   ID: 33333333\n";
+        echo "✅ Security account created in security_guards table:\n";
+        echo "   Guard ID: 33333333\n";
         echo "   Email: security@devpass.com\n";
         echo "   Password: security123\n";
+        echo "   Login with: Guard ID '33333333'\n";
     }
 }

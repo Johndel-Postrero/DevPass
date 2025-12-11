@@ -14,14 +14,14 @@ class Course extends Model
     // Table name (non-plural)
     protected $table = 'course';
 
-    // Primary key
+    // Primary key (integer per database diagram)
     protected $primaryKey = 'course_id';
 
-    // Primary key is not auto-incrementing (string type)
-    public $incrementing = false;
+    // Primary key is auto-incrementing (integer)
+    public $incrementing = true;
 
     // Key type
-    protected $keyType = 'string';
+    protected $keyType = 'int';
 
     // Mass assignable fields
     protected $fillable = [
@@ -32,10 +32,10 @@ class Course extends Model
     ];
 
     /**
-     * Relationship: A course belongs to a department
+     * Relationship: A course has many students
      */
-    // public function department()
-    // {
-    //     return $this->belongsTo(Department::class, 'department_id', 'department_id');
-    // }
+    public function students()
+    {
+        return $this->hasMany(Student::class, 'course_id', 'course_id');
+    }
 }
