@@ -53,7 +53,7 @@ import {
 
 function Register({ darkMode, onClose, onSuccess }) {
   const [formData, setFormData] = useState({
-    // deviceType: 'Laptop',
+    deviceType: 'Laptop',
     brand: '',
     model: '',
     serialNumber: '',
@@ -87,28 +87,28 @@ function Register({ darkMode, onClose, onSuccess }) {
     try {
       // Map form data to API format
       const deviceData = {
-        device_type: formData.deviceType,
-        brand: formData.brand || null,
-        model: formData.model || null,
-        serial_number: formData.serialNumber || null,
-        processor: formData.processor || null,
-        motherboard: formData.motherboard || null,
-        memory: formData.memory || null,
-        harddrive: formData.harddrive || null,
-        monitor: formData.monitor || null,
-        casing: formData.casing || null,
-        cd_rom: formData.cdRom || null,
-        operating_system: formData.operatingSystem || null,
-        model_number: formData.modelNumber || null,
-        mac_address: formData.macAddress || null,
-        notes: formData.notes || null
-      };
+    device_type: formData.deviceType || 'Laptop',
+    brand: formData.brand?.trim() || '',  // Ensure not empty
+    model: formData.model?.trim() || '',  // Ensure not empty
+    serial_number: formData.serialNumber?.trim() || null,
+    processor: formData.processor?.trim() || null,
+    motherboard: formData.motherboard?.trim() || null,
+    memory: formData.memory?.trim() || null,
+    harddrive: formData.harddrive?.trim() || null,
+    monitor: formData.monitor?.trim() || null,
+    casing: formData.casing?.trim() || null,
+    cd_rom: formData.cdRom?.trim() || null,
+    operating_system: formData.operatingSystem?.trim() || null,
+    model_number: formData.modelNumber?.trim() || null,
+    mac_address: formData.macAddress?.trim() || null,
+    notes: formData.notes?.trim() || null,
+  };
 
       const response = await api.post('/devices', deviceData);
       
       // Reset form
       setFormData({
-        // deviceType: '',
+        deviceType: 'Laptop',  // ADD THIS BACK
         brand: '',
         model: '',
         serialNumber: '',
@@ -447,6 +447,7 @@ function Register({ darkMode, onClose, onSuccess }) {
             <button
               onClick={handleSubmit}
               type="submit"
+              form ="registerForm"
               disabled={loading}
               className="flex-1 px-4 py-2.5 rounded-lg font-semibold bg-gradient-to-r from-blue-600 to-indigo-600 text-white hover:from-blue-700 hover:to-indigo-700 transition-all shadow-lg disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
             >

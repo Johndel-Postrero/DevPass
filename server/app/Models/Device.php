@@ -51,12 +51,9 @@ class Device extends Model
      */
     public function student(): BelongsTo
     {
-        // Check which primary key column exists in students table
-        $hasStudentId = \Illuminate\Support\Facades\Schema::hasColumn('students', 'student_id');
-        $ownerKey = $hasStudentId ? 'student_id' : 'id';
-        
-        // Foreign key on devices table is 'student_id', owner key depends on database structure
-        return $this->belongsTo(Student::class, 'student_id', $ownerKey);
+        // Foreign key on devices table is 'student_id'
+        // Student model uses 'student_id' as primary key per migration
+        return $this->belongsTo(Student::class, 'student_id', 'student_id');
     }
 
     /**

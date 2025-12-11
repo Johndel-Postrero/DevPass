@@ -435,12 +435,34 @@ class DeviceController extends Controller
         $validated = $request->validate([
             // NOTE: 'device_type' is not in the schema. Assuming 'model' or 'brand' covers the device description.
             // If you need to differentiate device types (Laptop/PC/Tablet), you must add 'device_type' to the migration.
-            'brand' => 'nullable|string|max:50',
-            'model' => 'required|string|max:100', // 'model' is unique per schema
+            'brand' => 'required|string|max:50', // Changed from nullable to required - database schema requires NOT NULL
+            'model' => 'required|string|max:100', // 'model' is required - FK to laptop_specifications.model
             'serial_number' => 'nullable|string|max:100',
         ]);
 
         $student = $request->user();
+        
+        // Validate student exists and has student_id
+        if (!$student) {
+            return response()->json([
+                'message' => 'Unauthorized. Please log in to register a device.',
+                'errors' => [
+                    'auth' => ['User not authenticated.']
+                ]
+            ], 401);
+        }
+        
+        // Get student_id - Student model uses 'student_id' as primary key
+        // The accessor will handle both 'student_id' and 'id' for backward compatibility
+        $studentId = $student->student_id ?? $student->getKey();
+        if (!$studentId) {
+            return response()->json([
+                'message' => 'Unable to identify student. Please contact administrator.',
+                'errors' => [
+                    'student' => ['Student ID not found.']
+                ]
+            ], 422);
+        }
         
         // Check for duplicate serial number across ALL students (serial numbers must be globally unique)
         if (!empty($validated['serial_number'])) {
@@ -460,9 +482,9 @@ class DeviceController extends Controller
         
         try {
             $device = Device::create([
-                'student_id' => $student->student_id ?? $student->id,
+                'student_id' => $studentId,
                 // Removed 'device_type' if it's not in the schema
-                'brand' => $validated['brand'] ?? null,
+                'brand' => $validated['brand'], // Brand is required - database schema requires NOT NULL
                 'model' => $validated['model'], // Model is required - FK to laptop_specifications.model
                 'serial_number' => $validated['serial_number'] ?? null,
                 // Removed all PC component fields (processor, motherboard, memory, etc.)
@@ -475,6 +497,13 @@ class DeviceController extends Controller
                 'device' => $device
             ], 201);
         } catch (\Illuminate\Database\QueryException $e) {
+            // Log the full error for debugging
+            \Log::error('Device registration error: ' . $e->getMessage(), [
+                'code' => $e->getCode(),
+                'sql' => $e->getSql() ?? 'N/A',
+                'bindings' => $e->getBindings() ?? [],
+            ]);
+            
             // Catch database unique constraint violations
             if ($e->getCode() === '23000' || str_contains($e->getMessage(), 'Duplicate entry')) {
                 // Model duplicates are allowed - ignore model constraint errors
@@ -505,8 +534,63 @@ class DeviceController extends Controller
                     ], 500);
                 }
             }
-            // Re-throw if it's not a duplicate entry error we can handle
-            throw $e;
+            
+            // Catch foreign key constraint violations
+            if (str_contains($e->getMessage(), 'foreign key constraint') || str_contains($e->getMessage(), 'Cannot add or update a child row')) {
+                if (str_contains($e->getMessage(), 'student_id')) {
+                    return response()->json([
+                        'message' => 'Invalid student ID. Please log out and log back in, or contact administrator.',
+                        'errors' => [
+                            'student' => ['Student not found in database.']
+                        ]
+                    ], 422);
+                }
+                if (str_contains($e->getMessage(), 'model') || str_contains($e->getMessage(), 'laptop_specifications')) {
+                    // Model FK constraint - this is optional, so we'll allow it but log it
+                    \Log::warning('Model foreign key constraint violation (model may not exist in laptop_specifications): ' . $e->getMessage());
+                    // Continue - model FK is optional per migration comments
+                }
+            }
+            
+            // Catch NOT NULL constraint violations
+            if (str_contains($e->getMessage(), 'cannot be null') || str_contains($e->getMessage(), 'Column') && str_contains($e->getMessage(), 'cannot be null')) {
+                if (str_contains($e->getMessage(), 'brand')) {
+                    return response()->json([
+                        'message' => 'Brand is required. Please provide a device brand.',
+                        'errors' => [
+                            'brand' => ['The brand field is required.']
+                        ]
+                    ], 422);
+                }
+                if (str_contains($e->getMessage(), 'model')) {
+                    return response()->json([
+                        'message' => 'Model is required. Please provide a device model.',
+                        'errors' => [
+                            'model' => ['The model field is required.']
+                        ]
+                    ], 422);
+                }
+            }
+            
+            // Generic database error
+            return response()->json([
+                'message' => 'Unable to register device. Please check your input and try again. If the problem persists, contact administrator.',
+                'errors' => [
+                    'general' => ['Database error occurred. Please try again or contact support.']
+                ]
+            ], 500);
+        } catch (\Exception $e) {
+            // Catch any other exceptions
+            \Log::error('Unexpected error during device registration: ' . $e->getMessage(), [
+                'trace' => $e->getTraceAsString()
+            ]);
+            
+            return response()->json([
+                'message' => 'An unexpected error occurred. Please try again or contact administrator.',
+                'errors' => [
+                    'general' => ['Unexpected error: ' . $e->getMessage()]
+                ]
+            ], 500);
         }
     }
 

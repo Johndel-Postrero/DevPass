@@ -14,9 +14,9 @@ class Student extends Authenticatable
 
     protected $table = 'students';
     
-    // Use 'id' as primary key for existing databases (will be 'student_id' after migration)
-    // The model will work with both 'id' and 'student_id' through accessors/mutators
-    protected $primaryKey = 'id';
+    // Primary key is 'student_id' per migration (2025_11_11_110907_create_students_table.php)
+    // The migration shows: $table->string('student_id', 20)->primary();
+    protected $primaryKey = 'student_id';
     
     // Indicate the primary key is a string (varchar(20))
     protected $keyType = 'string';
