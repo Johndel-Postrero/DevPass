@@ -1017,12 +1017,27 @@ export default function SecurityPersonnel() {
         // Get user-friendly error message
         let errorMessage = 'QR code is not registered in the system or the device is not active.';
         
-        if (error.response?.data?.message) {
-          errorMessage = error.response.data.message;
+        // Check for network errors (no response)
+        if (!error.response) {
+          if (error.code === 'ECONNABORTED' || error.message?.includes('timeout')) {
+            errorMessage = 'Request timed out. Please check your connection and try again.';
+          } else if (error.message?.includes('Network Error') || error.code === 'ERR_NETWORK') {
+            errorMessage = 'Network error. Please check your connection and ensure the server is running.';
+          } else {
+            errorMessage = 'Unable to connect to the server. Please check your connection and try again.';
+          }
+        } else if (error.response?.status === 500) {
+          // Server error - try to get message from response
+          errorMessage = error.response?.data?.message || 
+                        'Server error occurred while processing the QR code. Please try again or contact support.';
         } else if (error.response?.status === 404) {
           errorMessage = 'QR code is not registered in the system. This QR code does not exist in our database.';
         } else if (error.response?.status === 400) {
           errorMessage = 'QR code is expired or inactive. Please renew the QR code.';
+        } else if (error.response?.status === 422) {
+          errorMessage = error.response?.data?.message || 'Invalid QR code format. Please scan a valid QR code.';
+        } else if (error.response?.data?.message) {
+          errorMessage = error.response.data.message;
         }
         
         setScanResult({

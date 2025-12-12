@@ -103,12 +103,18 @@ class DeviceEntryController extends Controller
                 ]);
             }
             
+            // Get course name safely
+            $courseName = 'N/A';
+            if ($student && $student->course) {
+                $courseName = $student->course->course_name ?? $student->course->course_code ?? 'N/A';
+            }
+            
             return [
                 'id' => $entry->log_id,
                 'studentName' => ($student && isset($student->name)) ? $student->name : 'Unknown',
                 'studentId' => ($student && isset($student->student_id)) ? $student->student_id : (($student && isset($student->id)) ? $student->id : 'N/A'),
                 // 'studentDepartment' => $student->department ?? 'N/A',
-                'studentCourse' => ($student && isset($student->course)) ? $student->course : 'N/A',
+                'studentCourse' => $courseName,
                 'device' => $device ? ($device->brand . ' ' . $device->model) : 'N/A',
                 'deviceType' => 'Laptop', // Per database diagram: system handles laptops only (device_type removed)
                 'deviceSerial' => ($device && isset($device->serial_number)) ? $device->serial_number : 'N/A',
@@ -216,17 +222,28 @@ class DeviceEntryController extends Controller
                 ], 404);
             }
 
+            // Load course relationship if not already loaded
+            if (!$student->relationLoaded('course')) {
+                $student->load('course');
+            }
+
+            // Get course name safely
+            $courseName = 'N/A';
+            if ($student->course) {
+                $courseName = $student->course->course_name ?? $student->course->course_code ?? 'N/A';
+            }
+
             return response()->json([
                 'valid' => true,
                 'message' => 'QR code is valid',
                 'student_data' => [
-                    'student_name' => $student->name,
-                    'student_id' => $student->student_id ?? $student->id,
-                    'student_course' => $student->course,
+                    'student_name' => $student->name ?? 'Unknown',
+                    'student_id' => $student->student_id ?? $student->id ?? 'N/A',
+                    'student_course' => $courseName,
                 ],
                 'device' => [
-                    'brand' => $device->brand,
-                    'model' => $device->model,
+                    'brand' => $device->brand ?? 'Unknown',
+                    'model' => $device->model ?? 'Unknown',
                     'device_type' => 'Laptop', // Per database diagram: system handles laptops only
                 ],
             ]);
@@ -237,8 +254,27 @@ class DeviceEntryController extends Controller
                 'student_data' => null,
                 'device' => null
             ], 422);
+        } catch (\Illuminate\Database\QueryException $e) {
+            // Database connection or query errors
+            \Log::error('Database error reading QR code: ' . $e->getMessage(), [
+                'qr_hash' => $request->input('qr_hash'),
+                'code' => $e->getCode(),
+                'sql' => $e->getSql() ?? 'N/A',
+            ]);
+            return response()->json([
+                'valid' => false,
+                'message' => 'Database error occurred. Please check the server connection and try again.',
+                'student_data' => null,
+                'device' => null
+            ], 500);
         } catch (\Exception $e) {
-            \Log::error('Error reading QR code: ' . $e->getMessage());
+            // Log detailed error information
+            \Log::error('Error reading QR code: ' . $e->getMessage(), [
+                'qr_hash' => $request->input('qr_hash'),
+                'file' => $e->getFile(),
+                'line' => $e->getLine(),
+                'trace' => $e->getTraceAsString()
+            ]);
             return response()->json([
                 'valid' => false,
                 'message' => 'An error occurred while reading the QR code. Please try again.',
@@ -355,7 +391,13 @@ class DeviceEntryController extends Controller
                 'errors' => $e->errors()
             ], 422);
         } catch (\Exception $e) {
-            \Log::error('Error validating QR code: ' . $e->getMessage());
+            \Log::error('Error validating QR code (initial validation): ' . $e->getMessage(), [
+                'qr_hash' => $request->input('qr_hash'),
+                'gate_name' => $request->input('gate_name'),
+                'file' => $e->getFile(),
+                'line' => $e->getLine(),
+                'trace' => $e->getTraceAsString()
+            ]);
             return response()->json([
                 'status' => 'failed',
                 'success' => false,
@@ -365,29 +407,122 @@ class DeviceEntryController extends Controller
         }
 
         // Get or create gate
-        $gate = $this->gateService->getGateByName($validated['gate_name']);
-        if (!$gate) {
-            $gate = $this->gateService->createGate(['gate_name' => $validated['gate_name']]);
+        try {
+            $gate = $this->gateService->getGateByName($validated['gate_name']);
+            if (!$gate) {
+                // Create gate with required fields (location is required)
+                $gate = $this->gateService->createGate([
+                    'gate_name' => $validated['gate_name'],
+                    'location' => 'Main Campus', // Default location if not specified
+                    'is_active' => true
+                ]);
+            }
+        } catch (\Exception $e) {
+            \Log::error('Error getting/creating gate: ' . $e->getMessage(), [
+                'gate_name' => $validated['gate_name'],
+                'trace' => $e->getTraceAsString()
+            ]);
+            return response()->json([
+                'status' => 'failed',
+                'success' => false,
+                'valid' => false,
+                'message' => 'Error processing gate information. Please try again.',
+            ], 500);
         }
 
         // Get current security guard (from authenticated user)
-        $user = Auth::user();
-        $securityGuardId = 'SEC001'; // Default
-        if ($user && isset($user->email)) {
-            // Try to find security guard by email
-            $securityGuard = SecurityGuard::where('email', $user->email)->first();
-            if ($securityGuard) {
-                $securityGuardId = $securityGuard->guard_id;
+        try {
+            $user = Auth::user();
+            $securityGuardId = 'SEC001'; // Default
+            if ($user && isset($user->email)) {
+                // Try to find security guard by email
+                $securityGuard = SecurityGuard::where('email', $user->email)->first();
+                if ($securityGuard) {
+                    $securityGuardId = $securityGuard->guard_id;
+                } else {
+                    // Create security guard if doesn't exist
+                    try {
+                        // Password is required, generate a random one (security guards should set their own password via profile)
+                        $tempPassword = \Illuminate\Support\Str::random(16);
+                        $securityGuard = $this->securityGuardService->createSecurityGuard([
+                            'guard_id' => 'SEC' . str_pad(SecurityGuard::count() + 1, 3, '0', STR_PAD_LEFT),
+                            'name' => $user->name ?? 'Security Guard',
+                            'email' => $user->email,
+                            'phone' => $user->phone ?? null,
+                            'password' => $tempPassword, // Required field - will be hashed automatically
+                        ]);
+                        $securityGuardId = $securityGuard->guard_id;
+                    } catch (\Exception $e) {
+                        \Log::error('Error creating security guard: ' . $e->getMessage(), [
+                            'user_email' => $user->email,
+                            'trace' => $e->getTraceAsString()
+                        ]);
+                        // Ensure default SEC001 exists
+                        $defaultGuard = SecurityGuard::find('SEC001');
+                        if (!$defaultGuard) {
+                            try {
+                                $this->securityGuardService->createSecurityGuard([
+                                    'guard_id' => 'SEC001',
+                                    'name' => 'Default Security Guard',
+                                    'email' => 'security@default.local',
+                                    'password' => \Illuminate\Support\Str::random(16),
+                                ]);
+                            } catch (\Exception $e2) {
+                                \Log::error('Error creating default security guard: ' . $e2->getMessage());
+                            }
+                        }
+                    }
+                }
             } else {
-                // Create security guard if doesn't exist
-                $securityGuard = $this->securityGuardService->createSecurityGuard([
-                    'guard_id' => 'SEC' . str_pad(SecurityGuard::count() + 1, 3, '0', STR_PAD_LEFT),
-                    'name' => $user->name ?? 'Security Guard',
-                    'email' => $user->email,
-                    'phone' => $user->phone ?? null,
-                ]);
-                $securityGuardId = $securityGuard->guard_id;
+                // No user, ensure default SEC001 exists
+                $defaultGuard = SecurityGuard::find('SEC001');
+                if (!$defaultGuard) {
+                    try {
+                        $this->securityGuardService->createSecurityGuard([
+                            'guard_id' => 'SEC001',
+                            'name' => 'Default Security Guard',
+                            'email' => 'security@default.local',
+                            'password' => \Illuminate\Support\Str::random(16),
+                        ]);
+                    } catch (\Exception $e) {
+                        \Log::error('Error creating default security guard: ' . $e->getMessage());
+                    }
+                }
             }
+        } catch (\Exception $e) {
+            \Log::error('Error getting/creating security guard: ' . $e->getMessage(), [
+                'trace' => $e->getTraceAsString()
+            ]);
+            // Ensure default SEC001 exists as fallback
+            try {
+                $defaultGuard = SecurityGuard::find('SEC001');
+                if (!$defaultGuard) {
+                    $this->securityGuardService->createSecurityGuard([
+                        'guard_id' => 'SEC001',
+                        'name' => 'Default Security Guard',
+                        'email' => 'security@default.local',
+                        'password' => \Illuminate\Support\Str::random(16),
+                    ]);
+                }
+            } catch (\Exception $e2) {
+                \Log::error('Error creating default security guard fallback: ' . $e2->getMessage());
+            }
+        }
+
+        // Load course relationship if student exists and not already loaded
+        $courseName = 'N/A';
+        try {
+            if ($student) {
+                if (!$student->relationLoaded('course')) {
+                    $student->load('course');
+                }
+                if ($student->course) {
+                    $courseName = $student->course->course_name ?? $student->course->course_code ?? 'N/A';
+                }
+            }
+        } catch (\Exception $e) {
+            \Log::warning('Error loading course relationship: ' . $e->getMessage());
+            // Continue with default 'N/A' if course loading fails
         }
 
         // Create entry log with success status
@@ -398,9 +533,30 @@ class DeviceEntryController extends Controller
                 'security_guard_id' => $securityGuardId,
                 'status' => 'success',
             ]);
+        } catch (\Illuminate\Database\QueryException $e) {
+            \Log::error('Database error creating entry log: ' . $e->getMessage(), [
+                'qr_hash' => $validated['qr_hash'],
+                'gate_id' => $gate->gate_id ?? 'N/A',
+                'security_guard_id' => $securityGuardId,
+                'sql' => $e->getSql() ?? 'N/A',
+                'bindings' => $e->getBindings() ?? [],
+                'trace' => $e->getTraceAsString()
+            ]);
+            return response()->json([
+                'status' => 'failed',
+                'success' => false,
+                'valid' => false,
+                'message' => 'Database error occurred while logging entry. Please try again.',
+            ], 500);
         } catch (\Exception $e) {
-            \Log::error('Error creating entry log: ' . $e->getMessage());
-            \Log::error('Entry log error trace: ' . $e->getTraceAsString());
+            \Log::error('Error creating entry log: ' . $e->getMessage(), [
+                'qr_hash' => $validated['qr_hash'],
+                'gate_id' => $gate->gate_id ?? 'N/A',
+                'security_guard_id' => $securityGuardId,
+                'file' => $e->getFile(),
+                'line' => $e->getLine(),
+                'trace' => $e->getTraceAsString()
+            ]);
             return response()->json([
                 'status' => 'failed',
                 'success' => false,
@@ -414,14 +570,14 @@ class DeviceEntryController extends Controller
             'valid' => true,
             'message' => 'Device verified successfully',
             'student_data' => $student ? [
-                'student_name' => $student->name,
-                'student_id' => $student->student_id ?? $student->id,
+                'student_name' => $student->name ?? 'Unknown',
+                'student_id' => $student->student_id ?? $student->id ?? 'N/A',
                 // 'student_department' => $student->department,
-                'student_course' => $student->course,
+                'student_course' => $courseName,
             ] : null,
             'device' => $device ? [
-                'brand' => $device->brand,
-                'model' => $device->model,
+                'brand' => $device->brand ?? 'Unknown',
+                'model' => $device->model ?? 'Unknown',
                 'device_type' => 'Laptop', // Per database diagram: system handles laptops only
             ] : null,
             'data' => [
@@ -578,6 +734,12 @@ class DeviceEntryController extends Controller
             $device = $entry->qrCode->device ?? null;
             $student = $device->student ?? null;
             
+            // Get course name safely
+            $courseName = 'N/A';
+            if ($student && $student->course) {
+                $courseName = $student->course->course_name ?? $student->course->course_code ?? 'N/A';
+            }
+            
             return [
                 'id' => $entry->log_id,
                 'gate' => $entry->gate->gate_name ?? 'Unknown Gate',
@@ -593,7 +755,7 @@ class DeviceEntryController extends Controller
                 'studentName' => $student->name ?? 'Unknown',
                 'studentId' => $student->student_id ?? $student->id ?? 'N/A',
                 // 'studentDepartment' => $student->department ?? 'N/A',
-                'studentCourse' => $student->course ?? 'N/A',
+                'studentCourse' => $courseName,
                 'status' => $entry->status, // 'success' for approved, 'failed' for denied
                 'accessStatus' => $entry->status === 'success' ? 'approved' : 'denied', // User-friendly status
                 'securityGuard' => $entry->securityGuard->name ?? 'Unknown',
