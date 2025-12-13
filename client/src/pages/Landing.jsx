@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Eye, EyeOff, Lock, User, Zap, Shield, Rocket, Moon, Sun, Mail, GraduationCap, Calendar, X, ChevronRight, ChevronLeft, Check, Home as HomeIcon, Info, LogIn, Users, Globe, Phone, MapPin, Facebook, Twitter, Instagram, Linkedin, HelpCircle } from 'lucide-react';
+import { QrCode, Eye, EyeOff, Lock, User, Zap, Shield, Rocket, Moon, Sun, Mail, GraduationCap, Calendar, X, ChevronRight, ChevronLeft, Check, Home as HomeIcon, Info, LogIn, Users, Globe, Phone, MapPin, Facebook, Twitter, Instagram, Linkedin, HelpCircle } from 'lucide-react';
 import { authService } from '../services/authService';
 import { useNavigate } from 'react-router-dom';
 import {motion} from 'framer-motion';
@@ -635,7 +635,7 @@ const renderHome = () => (
               transition={{ type: "spring", stiffness: 200, delay: 0.2 }}
               className="p-3 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-xl shadow-lg"
             >
-              <Zap className="w-6 h-6 text-white" />
+              <QrCode className="w-5 h-5 sm:w-6 sm:h-6 text-white" />
             </motion.div>
             <motion.h1
               initial={{ opacity: 0 }}
@@ -1155,7 +1155,7 @@ const renderHome = () => (
             <div className="flex items-center gap-8">
               <div className="flex items-center gap-3">
                 <div className="p-2 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-xl">
-                  <Zap className="w-5 h-5 text-white" />
+                 <QrCode className="w-5 h-5 sm:w-6 sm:h-6 text-white" />
                 </div>
                 <span className="text-xl font-black bg-gradient-to-r from-blue-400 via-indigo-400 to-blue-600 bg-clip-text text-transparent">
                   DevPass
@@ -1222,7 +1222,7 @@ const renderHome = () => (
             <div>
               <div className="flex items-center gap-3 mb-4">
                 <div className="p-2 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-xl">
-                  <Zap className="w-5 h-5 text-white" />
+                  <QrCode className="w-5 h-5 sm:w-6 sm:h-6 text-white" />
                 </div>
                 <span className="text-xl font-black bg-gradient-to-r from-blue-400 via-indigo-400 to-blue-600 bg-clip-text text-transparent">
                   DevPass
@@ -1281,7 +1281,7 @@ const renderHome = () => (
           
           <div className={`mt-8 pt-8 border-t ${darkMode ? 'border-white/10' : 'border-gray-200'} text-center`}>
             <p className={darkMode ? 'text-gray-400' : 'text-gray-600'}>
-              © 2024 DevPass. All rights reserved. | Campus Security System
+              © 2025 DevPass. All rights reserved. | Campus Security System
             </p>
           </div>
         </div>

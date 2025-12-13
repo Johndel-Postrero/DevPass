@@ -473,7 +473,7 @@ export default function AdminDashboard() {
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2 sm:gap-3">
               <div className="p-1.5 sm:p-2 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-lg sm:rounded-xl shadow-lg">
-                <Shield className="w-5 h-5 sm:w-6 sm:h-6 text-white" />
+                <QrCode className="w-5 h-5 sm:w-6 sm:h-6 text-white" />
               </div>
               <div>
                 <h1 className="text-xl sm:text-2xl font-black bg-gradient-to-r from-blue-400 via-indigo-400 to-blue-600 bg-clip-text text-transparent">
@@ -555,12 +555,12 @@ export default function AdminDashboard() {
                   (stats.total || 0) - (stats.pending || 0) - (stats.active || 0)
                 ],
                 backgroundColor: [
-                  darkMode ? 'rgba(34, 211, 238, 0.8)' : 'rgba(34, 211, 238, 0.6)', // Cyan for Pending
+                  darkMode ? 'rgba(202, 138, 4, 1.0)' : 'rgba(34, 211, 238, 0.6)', // Cyan for Pending
                   darkMode ? 'rgba(6, 182, 212, 0.8)' : 'rgba(6, 182, 212, 0.6)',   // Sky Blue for Active
                   darkMode ? 'rgba(239, 68, 68, 0.8)' : 'rgba(239, 68, 68, 0.6)',   // Red for Rejected
                 ],
                 borderColor: [
-                  darkMode ? 'rgba(34, 211, 238, 1)' : 'rgba(34, 211, 238, 1)',
+                  darkMode ? 'rgba(202, 138, 4, 1.0)' : 'rgba(34, 211, 238, 1)',
                   darkMode ? 'rgba(6, 182, 212, 1)' : 'rgba(6, 182, 212, 1)',
                   darkMode ? 'rgba(239, 68, 68, 1)' : 'rgba(239, 68, 68, 1)', // Red for Rejected
                 ],
@@ -575,6 +575,7 @@ export default function AdminDashboard() {
             plugins: {
               legend: {
                 position: 'top',
+                display: false,
                 labels: {
                   color: darkMode ? '#9CA3AF' : '#6B7280',
                   font: {

@@ -1876,7 +1876,7 @@ export default function StudentDashboard() {
                 // Determine container class based on filter
                 let containerClass = "";
                 if (useTwoColumn) {
-                  containerClass = "grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6";
+                  containerClass = "grid grid-cols-1 lg:grid-cols-1 gap-4 sm:gap-6";
                 } else if (deviceFilter === 'pending') {
                   containerClass = "space-y-4 sm:space-y-6"; // Full width like admin
                 } else {

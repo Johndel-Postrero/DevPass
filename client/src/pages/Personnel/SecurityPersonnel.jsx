@@ -1228,7 +1228,7 @@ export default function SecurityPersonnel() {
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2 sm:gap-3">
               <div className="p-1.5 sm:p-2 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-lg sm:rounded-xl shadow-lg">
-                <Shield className="w-5 h-5 sm:w-6 sm:h-6 text-white" />
+                <QrCode className="w-5 h-5 sm:w-6 sm:h-6 text-white" />
               </div>
               <div>
                 <h1 className="text-xl sm:text-2xl font-black bg-gradient-to-r from-blue-400 via-indigo-400 to-blue-600 bg-clip-text text-transparent">
