@@ -1025,7 +1025,7 @@ export default function AdminSettings({ darkMode = true, onClose, adminData = {}
                               </span>
                             </td>
                             <td className="py-3 px-4">
-                              <div className="flex gap-2">
+                              <div className="flex ">
                                 <button 
                                   onClick={() => {
                                     setSelectedStudent(student);
@@ -1036,7 +1036,7 @@ export default function AdminSettings({ darkMode = true, onClose, adminData = {}
                                 >
                                   <Eye className={`w-4 h-4 ${textSecondary}`} />
                                 </button>
-                                <button 
+                                {/* <button 
                                   onClick={() => {
                                     setEditingStudent({
                                       id: studentId,
@@ -1054,7 +1054,7 @@ export default function AdminSettings({ darkMode = true, onClose, adminData = {}
                                   title="Edit Student"
                                 >
                                   <Edit className={`w-4 h-4 ${textSecondary}`} />
-                                </button>
+                                </button> */}
                               </div>
                             </td>
                           </tr>
@@ -1358,7 +1358,7 @@ export default function AdminSettings({ darkMode = true, onClose, adminData = {}
               </div>
 
               <div className="flex gap-3 mt-6">
-                <button
+                {/* <button
                   onClick={() => {
                     setShowViewStudent(false);
                     setEditingStudent({
@@ -1379,8 +1379,8 @@ export default function AdminSettings({ darkMode = true, onClose, adminData = {}
                     <Edit className="w-4 h-4" />
                     Edit Student
                   </div>
-                </button>
-                <button
+                </button> */}
+                {/* <button
                   onClick={() => {
                     setShowViewStudent(false);
                     setSelectedStudent(null);
@@ -1388,7 +1388,7 @@ export default function AdminSettings({ darkMode = true, onClose, adminData = {}
                   className={`px-4 py-3 rounded-lg font-semibold transition-all ${darkMode ? 'bg-white/10 hover:bg-white/20 text-white' : 'bg-gray-100 hover:bg-gray-200 text-gray-900'}`}
                 >
                   Close
-                </button>
+                </button> */}
               </div>
             </div>
           </div>
